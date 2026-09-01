@@ -1,0 +1,106 @@
+// Precios de abastos. El precio vigente de un producto es su registro de Precio
+// mas reciente; nunca se sobreescribe, siempre se inserta uno nuevo.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Unidad {
+  KG
+  LB
+  UNIDAD
+  PAQUETE
+  BULTO
+}
+
+enum OrigenPrecio {
+  SEED
+  LISTA
+  MANUAL
+}
+
+model Producto {
+  id     String  @id @default(cuid())
+  nombre String
+  slug   String  @unique
+
+  /// null para los productos de la lista que todavia no tienen unidad definida
+  /// (arroces, platos, abarrotes). Fuera de eso, la unidad le dice al parser que
+  /// asumir cuando el texto no lo aclara: LB significa "si no dice kg, es libra".
+  unidad    Unidad?
+  categoria String?
+
+  /// Margen propio del producto: venta = redondear50(costo * margen).
+  /// Va de 1.088235 (alverja desgranada) a 1.454545 (coliseros). Seis decimales:
+  /// con menos, el redondeo a 50 salta de bucket (1666 x 1.3205 -> 2250 en vez de 2200).
+  margen Decimal @db.Decimal(10, 6)
+
+  /// Posicion en la hoja de calculo. El boton "copiar columnas" pega compra y venta
+  /// en ese orden exacto, asi que alterarlo desalinea la hoja del usuario.
+  orden Int
+
+  activo Boolean @default(true)
+
+  /// El "no hay" / ❌ de la lista diaria. Marca falta de existencia sin borrar el
+  /// ultimo precio conocido.
+  disponible Boolean @default(true)
+
+  notas String?
+
+  /// Como llega escrito el producto en las listas de WhatsApp, normalizado
+  /// (minusculas, sin tildes). Cada emparejamiento que el usuario confirma a mano
+  /// se guarda aqui para que la proxima vez acierte solo.
+  aliases String[] @default([])
+
+  precios Precio[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([activo, orden])
+}
+
+model Precio {
+  id         String   @id @default(cuid())
+  productoId String
+  producto   Producto @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  /// En pesos colombianos, siempre por kilo para KG y LB. Para UNIDAD, PAQUETE y
+  /// BULTO es por esa unidad. Nullable porque hay productos en la lista todavia sin
+  /// precio, y "Papa (bulto)" tiene compra pero no venta.
+  costo Int?
+  venta Int?
+
+  fecha  DateTime     @default(now())
+  origen OrigenPrecio @default(LISTA)
+
+  /// Que lista produjo este precio. null cuando fue una edicion manual o el seed.
+  actualizacionId String?
+  actualizacion   Actualizacion? @relation(fields: [actualizacionId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([productoId, fecha(sort: Desc)])
+  @@index([actualizacionId])
+}
+
+model Actualizacion {
+  id String @id @default(cuid())
+
+  /// La lista cruda tal como llego por WhatsApp, sin tocar, para poder auditar
+  /// que se aplico y por que.
+  textoOriginal   String   @db.Text
+  fecha           DateTime @default(now())
+  cantidadCambios Int      @default(0)
+
+  precios Precio[]
+
+  createdAt DateTime @default(now())
+
+  @@index([fecha(sort: Desc)])
+}
