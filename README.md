@@ -53,67 +53,72 @@ Hace falta Node 20+ y un PostgreSQL.
 
 ```bash
 npm install
-cp .env.example .env          # y llena DATABASE_URL y CLAVE_ESCRITURA
+cp .env.example .env          # y llena las tres variables
 npx prisma migrate deploy     # crea las tablas
 npx prisma db seed            # carga los 112 productos
 npm run dev
 ```
 
 ```bash
-npm test                      # los tests del parser
+npm test                      # tests del parser y del resolutor de conexiones
 ```
 
 ## Variables de entorno
 
-| Variable | Para qué | Ejemplo |
-|---|---|---|
-| `DATABASE_URL` | Conexión a PostgreSQL. **Obligatoria.** | `postgresql://user:clave@host:5432/milista` |
-| `CLAVE_ESCRITURA` | Clave para poder cambiar precios. **Obligatoria.** Sin ella la app queda de solo lectura. | una frase larga |
-| `NEXT_PUBLIC_APP_URL` | URL pública. Opcional. | `https://milista.up.railway.app` |
+| Variable | Para qué |
+|---|---|
+| `DATABASE_URL` | Conexión a Postgres. En Vercel la inyecta la base; en local la pones tú. |
+| `DATABASE_URL_UNPOOLED` | Conexión directa, solo para migraciones. En local, la misma que la anterior. |
+| `CLAVE_ESCRITURA` | Clave para cambiar precios. **Obligatoria**: sin ella la app queda de solo lectura. |
+| `NEXT_PUBLIC_APP_URL` | URL pública. Opcional. |
 
-Consultar precios es público; cambiarlos pide la clave una vez y deja una cookie
-de un año.
+Consultar precios es público; cambiarlos pide la clave una vez y deja una cookie de
+un año.
+
+**Sobre los nombres de las variables:** Vercel permite un prefijo al conectar la base,
+así que pueden quedar como `DATABASE_URL`, `POSTGRES_URL`, `STORAGE_URL` o cualquier
+otra cosa. La app no depende del nombre: recorre las variables, se queda con las que
+son una URL de Postgres y distingue la agrupada de la directa por el propio host. No
+tienes que renombrar nada.
 
 ---
 
-## Desplegar en Railway (recomendado)
-
-Railway da la app y la base de datos en el mismo proyecto, que es lo más simple.
-
-1. **New Project → Deploy from GitHub repo** y elige este repositorio.
-2. **New → Database → Add PostgreSQL.** Railway crea `DATABASE_URL` sola.
-3. En el servicio de la app, **Variables**:
-   - `DATABASE_URL` → referencia la del Postgres (`${{Postgres.DATABASE_URL}}`).
-   - `CLAVE_ESCRITURA` → tu clave.
-4. **Settings → Deploy → Start Command**:
-   ```
-   npx prisma migrate deploy && npm start
-   ```
-   Así cada despliegue aplica las migraciones pendientes antes de arrancar.
-5. Primer despliegue: una sola vez, carga los productos.
-   ```
-   railway run npx prisma db seed
-   ```
-6. **Settings → Networking → Generate Domain** para tener la URL.
-
 ## Desplegar en Vercel
 
-Vercel corre la app pero **no incluye base de datos**: hay que traer un Postgres
-aparte (Neon, Supabase, o el mismo Postgres de Railway).
+La app necesita un Postgres. Vercel te lo da desde su propio panel: «Vercel Postgres»
+como producto propio se retiró en diciembre de 2024 y ahora se provisiona **Neon** desde
+el Marketplace, sin salir de Vercel.
 
-1. Crea el Postgres donde prefieras y copia su cadena de conexión.
-2. **Import Project** desde GitHub. Vercel detecta Next.js solo.
-3. **Environment Variables**: `DATABASE_URL` y `CLAVE_ESCRITURA`.
-4. El `build` del `package.json` ya corre `prisma generate`, que es lo que Vercel
-   necesita para que el cliente de Prisma exista en la función.
-5. Las migraciones y el seed se corren **desde tu máquina** apuntando al mismo
-   Postgres, porque el build de Vercel no debería tocar la base:
-   ```bash
-   DATABASE_URL="la-misma-de-produccion" npx prisma migrate deploy
-   DATABASE_URL="la-misma-de-produccion" npx prisma db seed
-   ```
+1. **Add New → Project** e importa este repositorio. Vercel detecta Next.js solo.
+2. **Storage → Create Database → Neon**, y conéctala al proyecto. Las variables de
+   conexión quedan puestas solas.
+3. **Settings → Environment Variables → `CLAVE_ESCRITURA`**, una frase larga. Es la que
+   te va a pedir la app para cambiar precios.
+4. **Redeploy.** El build aplica las migraciones y crea las tablas.
+5. Abre la URL. Sale **«Casi lista»** con un botón para cargar los 112 productos: lo
+   tocas, pones la clave, y ya queda funcionando. Se puede repetir sin duplicar nada.
+6. En Android: Chrome → ⋮ → **Instalar aplicación**.
 
-Si la app abre y dice «Falta conectar la base», es que faltó el paso 5.
+### Cómo se aplican las migraciones
+
+El `package.json` trae un script `vercel-build`, que Vercel ejecuta en lugar de `build`
+cuando existe:
+
+```
+node scripts/preparar-env.mjs && prisma generate && prisma migrate deploy && next build
+```
+
+No hay que configurar nada en el panel. Si `migrate deploy` falla, `next build` no corre,
+el despliegue se marca como fallido y **la versión anterior sigue en línea**. Si por lo
+que sea Vercel no tomara el script, pon ese mismo comando en Settings → Build Command.
+
+Hacen falta dos conexiones distintas y por eso el `datasource` tiene `directUrl`: las
+consultas de la app van por la **agrupada** (PgBouncer), porque cada invocación
+serverless abre una conexión nueva y sin pooler se agota Postgres; las migraciones van
+por la **directa**, porque el DDL no funciona a través de un pooler en modo transacción.
+
+En el plan gratuito de Neon la base se duerme cuando no se usa, así que la primera
+consulta del día tarda un segundo de más. No es un error.
 
 ## Instalar en el celular (Android)
 
@@ -136,15 +141,21 @@ app/
     actualizacion/aplicar/     POST aplica los cambios confirmados
     export/csv/                CSV para la hoja de cálculo
     sesion/                    entrega la cookie a cambio de la clave
+    setup/                     carga el catálogo tras el primer despliegue
 components/                    interfaz
 lib/
   parser.ts                    interpreta la lista. Función pura, con tests
   normalizar.ts                limpieza de texto y aliases
   precios.ts                   redondeo a 50, margen, formato de pesos
   consultas.ts                 catálogo con el precio vigente
+  conexion.mjs                 encuentra la base sin depender del nombre de la variable
+  productos.ts                 los 112 productos con su unidad y su precio
+  seed.ts                      carga el catálogo. La usan el CLI y /api/setup
+scripts/
+  preparar-env.mjs             deja el .env que el CLI de Prisma espera, en el build
 prisma/
   schema.prisma                Producto · Precio · Actualizacion
-  seed.ts                      los 112 productos con su margen
+  seed.ts                      envoltorio de `prisma db seed`
 ```
 
 ### Cómo está modelado

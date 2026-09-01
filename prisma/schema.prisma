@@ -7,7 +7,14 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+
+  // Agrupada (PgBouncer): las consultas de la app. Cada invocacion serverless abre
+  // una conexion nueva, y sin pooler se agota Postgres.
+  url = env("DATABASE_URL")
+
+  // Directa: solo migraciones y seed. El DDL no funciona a traves de un pooler en
+  // modo transaccion, asi que migrate necesita saltarselo.
+  directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 enum Unidad {
