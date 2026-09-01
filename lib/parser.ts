@@ -224,20 +224,25 @@ export interface Emparejamiento {
  * nombre mas corto y luego por id.
  */
 export function emparejar(texto: string, catalogo: ProductoCatalogo[]): Emparejamiento | null {
-  const q = normalizar(texto)
+  // Todo se compara despues de limpiarNombre: es la forma en la que el parser
+  // entrega los segmentos y en la que se guardan los aliases. Si un lado usara
+  // normalizar y el otro limpiarNombre, un alias con relleno ("guayabita del
+  // monte") no volveria a emparejar nunca.
+  const q = limpiarNombre(texto)
   if (!q) return null
+  const slug = normalizar(texto)
 
   // 1. Alias confirmado antes por el usuario: es la respuesta, sin discusion.
-  const porAlias = catalogo.find((p) => p.aliases.some((a) => normalizar(a) === q))
+  const porAlias = catalogo.find((p) => p.aliases.some((a) => limpiarNombre(a) === q))
   if (porAlias) return { producto: porAlias, confianza: 'alias' }
 
   // 2. Nombre o slug exacto.
-  const exacto = catalogo.find((p) => normalizar(p.nombre) === q || p.slug === q)
+  const exacto = catalogo.find((p) => limpiarNombre(p.nombre) === q || p.slug === slug)
   if (exacto) return { producto: exacto, confianza: 'exacto' }
 
   // 3. El mejor puntaje entre todos.
   const rankeados = catalogo
-    .map((producto) => ({ producto, puntaje: puntuar(q, normalizar(producto.nombre)) }))
+    .map((producto) => ({ producto, puntaje: puntuar(q, limpiarNombre(producto.nombre)) }))
     .sort(
       (a, b) =>
         b.puntaje - a.puntaje ||
@@ -248,7 +253,7 @@ export function emparejar(texto: string, catalogo: ProductoCatalogo[]): Empareja
   const mejor = rankeados[0]
   if (!mejor || mejor.puntaje < UMBRAL_DIFUSO) return null
 
-  const n = normalizar(mejor.producto.nombre)
+  const n = limpiarNombre(mejor.producto.nombre)
   const contenido = q.includes(n) || n.includes(q)
   return { producto: mejor.producto, confianza: contenido ? 'contenido' : 'difuso' }
 }

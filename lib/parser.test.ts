@@ -245,3 +245,17 @@ describe('lista completa', () => {
     expect(noReconocidos.every((n) => n.valor == null)).toBe(true)
   })
 })
+
+describe('los aliases se guardan como el parser los va a leer', () => {
+  it('un alias con palabras de relleno vuelve a emparejar', () => {
+    // El alias se guarda pasando por limpiarNombre, que quita "del". Si se
+    // guardara con normalizar quedaria "guayabita del monte" y no volveria a
+    // encontrarse nunca, porque el parser genera "guayabita monte".
+    const conAlias = CATALOGO.map((p) =>
+      p.id === 'guayaba' ? { ...p, aliases: ['guayabita monte'] } : p,
+    )
+    const m = emparejar('guayabita del monte', conAlias)
+    expect(m?.producto.id).toBe('guayaba')
+    expect(m?.confianza).toBe('alias')
+  })
+})

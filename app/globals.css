@@ -1,0 +1,28 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  /* La app vive en el celular con la barra de gestos de Android encima. */
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Los inputs numericos no necesitan las flechitas y roban ancho en pantallas chicas. */
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type='number'] {
+  -moz-appearance: textfield;
+}
+
+/* Que el rebote del scroll no muestre el fondo blanco del navegador. */
+html {
+  background: #0a0a0a;
+  -webkit-tap-highlight-color: transparent;
+}
