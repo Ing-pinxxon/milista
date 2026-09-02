@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { puedeEscribir } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import { GraficaHistorico } from '@/components/grafica-historico'
 import { prisma } from '@/lib/prisma'
@@ -24,17 +25,21 @@ export default async function Historico({ params }: { params: { slug: string } }
 
   if (!producto) notFound()
 
+  // Sin clave, el historico muestra solo como se movio el precio de venta.
+  const conClave = puedeEscribir()
+
   const puntos = producto.precios.map((p) => ({
-    costo: p.costo,
+    costo: conClave ? p.costo : null,
     venta: p.venta,
     fecha: p.fecha.toISOString(),
   }))
 
   const ultimo = puntos[puntos.length - 1]
   const primero = puntos[0]
+  // Sobre la venta, que es la serie que siempre esta: sin clave no hay costos.
   const variacion =
-    primero?.costo && ultimo?.costo && puntos.length > 1
-      ? ((ultimo.costo - primero.costo) / primero.costo) * 100
+    primero?.venta && ultimo?.venta && puntos.length > 1
+      ? ((ultimo.venta - primero.venta) / primero.venta) * 100
       : null
 
   return (
@@ -49,15 +54,15 @@ export default async function Historico({ params }: { params: { slug: string } }
       <header className="mb-6 mt-2">
         <h1 className="text-2xl font-bold tracking-tight">{producto.nombre}</h1>
         <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-neutral-500">
-          {producto.unidad ? ETIQUETA_UNIDAD[producto.unidad] : '—'} · margen ×
-          {Number(producto.margen).toFixed(2)} · {puntos.length} registro
+          {producto.unidad ? ETIQUETA_UNIDAD[producto.unidad] : '—'}
+          {conClave && <> · margen ×{Number(producto.margen).toFixed(2)}</>} · {puntos.length} registro
           {puntos.length === 1 ? '' : 's'}
           {!producto.disponible && <span className="text-red-400"> · sin existencia</span>}
         </p>
       </header>
 
-      <div className="mb-6 grid grid-cols-3 gap-2">
-        <Tarjeta etiqueta="Compra hoy" valor={cop(ultimo?.costo)} />
+      <div className={`mb-6 grid gap-2 ${conClave ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {conClave && <Tarjeta etiqueta="Compra hoy" valor={cop(ultimo?.costo)} />}
         <Tarjeta etiqueta="Venta hoy" valor={cop(ultimo?.venta)} acento />
         <Tarjeta
           etiqueta="Variación"

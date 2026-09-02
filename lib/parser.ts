@@ -63,8 +63,16 @@ export interface ResultadoParse {
 /** Por debajo de esto un numero es una cantidad ("2 bultos"), no un precio. */
 const PRECIO_MINIMO = 100
 
-/** Puntaje minimo para aceptar un emparejamiento difuso. */
-const UMBRAL_DIFUSO = 0.5
+/**
+ * Puntaje minimo para aceptar un emparejamiento difuso.
+ *
+ * Medido sobre el catalogo real hay un corte limpio: los aciertos de verdad
+ * ("papa criolla" -> Criolla) puntuan 0.59 o mas, y los productos que solo se
+ * parecen ("papa pastusa" contra las otras papas) se quedan entre 0.47 y 0.51.
+ * Por debajo del umbral es preferible mandarlo a "no los encontre", donde se
+ * puede agregar o asignar a mano, que colar un precio en el producto que no es.
+ */
+const UMBRAL_DIFUSO = 0.55
 
 const RE_AGOTADO = /❌|✗|🚫|⛔|\bno hay\b|\bagotad|\bno vino\b|\bno trajeron\b/i
 const RE_MARCAS = /[✅✔❌✗🚫⛔]/g
@@ -181,25 +189,51 @@ function dice(a: string[], b: string[]): number {
   return (2 * comunes) / (a.length + b.length)
 }
 
-/** Dos palabras cuentan como la misma si una es prefijo de la otra (>= 4 letras). */
-function tokensCoinciden(a: string, b: string): boolean {
-  if (a === b) return true
+/**
+ * Cuanto vale una coincidencia por prefijo frente a una palabra identica.
+ *
+ * Tiene que valer menos: "papa" es prefijo de "papaya", y sin esta diferencia
+ * "papa pastusa" emparejaba con Papaya en vez de con una papa.
+ */
+const PESO_PREFIJO = 0.6
+
+/** "tomat" vale por "tomate", pero solo desde 4 letras para no casar cualquier cosa. */
+function esPrefijo(a: string, b: string): boolean {
   const corto = a.length < b.length ? a : b
   return corto.length >= 4 && (a.startsWith(b) || b.startsWith(a))
 }
 
+/**
+ * Similitud por palabras, en dos pasadas: primero las identicas y despues las
+ * que solo coinciden por prefijo. El orden importa, porque una palabra exacta
+ * nunca debe perder su pareja contra una coincidencia parcial.
+ */
 function dicePalabras(a: string[], b: string[]): number {
   if (!a.length || !b.length) return 0
+
   const restantes = [...b]
-  let comunes = 0
+  const sinPareja: string[] = []
+  let puntaje = 0
+
   for (const x of a) {
-    const i = restantes.findIndex((y) => tokensCoinciden(x, y))
+    const i = restantes.indexOf(x)
     if (i !== -1) {
-      comunes++
+      puntaje += 1
+      restantes.splice(i, 1)
+    } else {
+      sinPareja.push(x)
+    }
+  }
+
+  for (const x of sinPareja) {
+    const i = restantes.findIndex((y) => esPrefijo(x, y))
+    if (i !== -1) {
+      puntaje += PESO_PREFIJO
       restantes.splice(i, 1)
     }
   }
-  return (2 * comunes) / (a.length + b.length)
+
+  return (2 * puntaje) / (a.length + b.length)
 }
 
 /**

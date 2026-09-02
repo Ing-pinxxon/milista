@@ -5,11 +5,13 @@ import { calcularVenta } from '@/lib/precios'
 import { prisma } from '@/lib/prisma'
 import type { Unidad } from '@prisma/client'
 
-// Publica: es lo que la PWA cachea para funcionar sin senal.
+// Publica, pero lo que devuelve depende de si hay clave: sin ella van solo los
+// precios de venta. Es lo que la PWA cachea para funcionar sin senal.
 export const dynamic = 'force-dynamic'
 
 export async function GET() {
-  const productos = await obtenerCatalogo()
+  // Sin clave el catalogo sale sin compra ni margen.
+  const productos = await obtenerCatalogo(puedeEscribir())
   return Response.json({ productos })
 }
 

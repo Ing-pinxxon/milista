@@ -12,7 +12,8 @@ export async function POST(req: Request) {
   const { texto } = (await req.json()) as { texto?: string }
   if (!texto?.trim()) return Response.json({ error: 'No llego texto.' }, { status: 400 })
 
-  const catalogo = await obtenerCatalogo()
+  // Con costos: el parser necesita el margen de cada producto para calcular la venta.
+  const catalogo = await obtenerCatalogo(true)
   const { cambios, noReconocidos } = parsearLista(texto, catalogo)
 
   return Response.json({ cambios, noReconocidos })

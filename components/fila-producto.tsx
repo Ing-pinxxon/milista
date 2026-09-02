@@ -44,7 +44,7 @@ export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }
   return (
     <div className="border-b border-neutral-900">
       <button
-        onClick={() => setAbierto((v) => !v)}
+        onClick={() => puedeEscribir && setAbierto((v) => !v)}
         className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left active:bg-neutral-900"
       >
         <div className="min-w-0 flex-1">
@@ -57,7 +57,9 @@ export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }
             )}
           </p>
           <p className="mt-1 font-mono text-[11px] uppercase tracking-wider text-neutral-500">
-            {producto.unidad ? ETIQUETA_UNIDAD[producto.unidad] : '—'} · compra {cop(producto.costoActual)}
+            {producto.unidad ? ETIQUETA_UNIDAD[producto.unidad] : '—'}
+            {/* La compra solo se muestra con clave: es dato del negocio, no del cliente. */}
+            {puedeEscribir && <> · compra {cop(producto.costoActual)}</>}
             {esDeHoy && <span className="text-amber-500"> · hoy</span>}
           </p>
         </div>
@@ -66,7 +68,7 @@ export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }
         </p>
       </button>
 
-      {abierto && (
+      {abierto && puedeEscribir && (
         <div className="animate-fade-in space-y-3 bg-neutral-900/50 px-4 pb-4 pt-1">
           <div className="flex gap-2">
             <label className="flex-1">

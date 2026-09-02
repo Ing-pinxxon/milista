@@ -13,7 +13,8 @@ import {
 
 interface Props {
   productos: ProductoConPrecio[]
-  onCerrar: () => void
+  /** `huboAltas` avisa que se crearon productos y el catalogo de afuera quedo viejo. */
+  onCerrar: (huboAltas: boolean) => void
   onAplicado: (cantidad: number) => void
   onPedirClave: () => void
 }
@@ -28,6 +29,9 @@ export function ModalLista({ productos, onCerrar, onAplicado, onPedirClave }: Pr
   const [preview, setPreview] = useState<Preview | null>(null)
   const [cargando, setCargando] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Si se crearon productos, el catalogo de afuera quedo viejo aunque no se
+  // aplique ningun cambio de precio.
+  const [huboAltas, setHuboAltas] = useState(false)
 
   const analizar = async () => {
     setCargando(true)
@@ -112,13 +116,21 @@ export function ModalLista({ productos, onCerrar, onAplicado, onPedirClave }: Pr
     })
   }
 
+  /** El producto ya se creo con su precio: sale de la lista de pendientes. */
+  const creado = (noReconocido: NoReconocido) => {
+    setPreview((p) =>
+      p ? { ...p, noReconocidos: p.noReconocidos.filter((n) => n !== noReconocido) } : p,
+    )
+    setHuboAltas(true)
+  }
+
   const marcados = preview?.cambios.filter((c) => c.aplicar).length ?? 0
 
   if (!preview) {
     return (
       <Modal
         titulo="Lista del día"
-        onCerrar={onCerrar}
+        onCerrar={() => onCerrar(huboAltas)}
         pie={
           <button
             onClick={analizar}
@@ -151,7 +163,7 @@ export function ModalLista({ productos, onCerrar, onAplicado, onPedirClave }: Pr
   return (
     <Modal
       titulo="Revisar cambios"
-      onCerrar={onCerrar}
+      onCerrar={() => onCerrar(huboAltas)}
       pie={
         <div className="flex gap-2">
           <button
@@ -242,7 +254,13 @@ export function ModalLista({ productos, onCerrar, onAplicado, onPedirClave }: Pr
               No los encontré
             </p>
             {preview.noReconocidos.map((n, k) => (
-              <SinReconocer key={k} item={n} productos={productos} onAsignar={asignar} />
+              <SinReconocer
+                key={k}
+                item={n}
+                productos={productos}
+                onAsignar={asignar}
+                onCreado={creado}
+              />
             ))}
           </div>
         )}
@@ -252,17 +270,42 @@ export function ModalLista({ productos, onCerrar, onAplicado, onPedirClave }: Pr
   )
 }
 
-/** Una linea que el parser no supo emparejar: se asigna a mano o se crea nueva. */
+/** Una linea que el parser no supo emparejar: se crea como producto o se asigna. */
 function SinReconocer({
   item,
   productos,
   onAsignar,
+  onCreado,
 }: {
   item: NoReconocido
   productos: ProductoConPrecio[]
   onAsignar: (n: NoReconocido, p: ProductoConPrecio) => void
+  onCreado: (n: NoReconocido) => void
 }) {
   const [eligiendo, setEligiendo] = useState(false)
+  const [creando, setCreando] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // El nombre va con mayuscula inicial, como el resto del catalogo.
+  const nombre = item.textoDetectado.charAt(0).toUpperCase() + item.textoDetectado.slice(1)
+
+  const agregar = async () => {
+    setCreando(true)
+    setError(null)
+    // La libra se guarda por kilo, igual que en el resto de la app.
+    const unidad =
+      item.unidadDetectada === 'lb' ? 'LB' : item.unidadDetectada === 'unidad' ? 'UNIDAD' : 'KG'
+    const costo = item.valor == null ? null : item.unidadDetectada === 'lb' ? item.valor * 2 : item.valor
+
+    const r = await fetch('/api/productos', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ nombre, unidad, costo, alias: item.textoDetectado }),
+    })
+    setCreando(false)
+    if (!r.ok) return setError((await r.json()).error ?? 'No se pudo crear.')
+    onCreado(item)
+  }
 
   return (
     <div className="border-t border-amber-900/40 py-2 first:border-t-0">
@@ -270,13 +313,23 @@ function SinReconocer({
         <span className="truncate text-sm text-neutral-300">
           {item.textoDetectado} {item.valor ? cop(item.valor) : ''}
         </span>
-        <button
-          onClick={() => setEligiendo((v) => !v)}
-          className="min-h-[36px] shrink-0 rounded border border-amber-700 px-2 font-mono text-[10px] uppercase tracking-wider text-amber-400"
-        >
-          {eligiendo ? 'Cancelar' : 'Es este otro'}
-        </button>
+        <div className="flex shrink-0 gap-1.5">
+          <button
+            onClick={agregar}
+            disabled={creando}
+            className="min-h-[36px] rounded bg-amber-400 px-2.5 font-mono text-[10px] font-bold uppercase tracking-wider text-neutral-950 disabled:opacity-40"
+          >
+            {creando ? '…' : 'Agregar'}
+          </button>
+          <button
+            onClick={() => setEligiendo((v) => !v)}
+            className="min-h-[36px] rounded border border-amber-700 px-2 font-mono text-[10px] uppercase tracking-wider text-amber-400"
+          >
+            {eligiendo ? 'Cancelar' : 'Es este otro'}
+          </button>
+        </div>
       </div>
+      {error && <p className="mt-1 text-xs text-red-400">{error}</p>}
 
       {eligiendo && (
         <select

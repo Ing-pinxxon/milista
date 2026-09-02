@@ -188,26 +188,33 @@ export function AppPrecios({
             + Producto
           </button>
         </div>
-        <div className="mt-2 flex gap-2">
-          <button
-            onClick={copiarColumnas}
-            className="min-h-[40px] flex-1 rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
-          >
-            Copiar columnas
-          </button>
-          <a
-            href="/api/export/csv"
-            className="flex min-h-[40px] flex-1 items-center justify-center rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
-          >
-            Descargar CSV
-          </a>
-        </div>
+        {/* Las dos exportaciones llevan el precio de compra: solo con clave. */}
+        {puedeEscribir && (
+          <div className="mt-2 flex gap-2">
+            <button
+              onClick={copiarColumnas}
+              className="min-h-[40px] flex-1 rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
+            >
+              Copiar columnas
+            </button>
+            <a
+              href="/api/export/csv"
+              className="flex min-h-[40px] flex-1 items-center justify-center rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
+            >
+              Descargar CSV
+            </a>
+          </div>
+        )}
       </div>
 
       {modo === 'lista' && (
         <ModalLista
           productos={productos}
-          onCerrar={() => setModo(null)}
+          onCerrar={(huboAltas) => {
+            setModo(null)
+            // Se crearon productos aunque no se aplicara ninguna lista.
+            if (huboAltas) refrescar()
+          }}
           onPedirClave={() => setModo('clave')}
           onAplicado={(n) => {
             setModo(null)
@@ -238,6 +245,9 @@ export function AppPrecios({
             setPuedeEscribir(true)
             setModo(null)
             flash('Ya puedes hacer cambios')
+            // El catalogo en memoria vino sin compras ni margenes: hay que pedirlo
+            // otra vez ahora que hay clave.
+            refrescar()
           }}
         />
       )}

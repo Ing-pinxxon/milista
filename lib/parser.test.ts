@@ -259,3 +259,37 @@ describe('los aliases se guardan como el parser los va a leer', () => {
     expect(m?.confianza).toBe('alias')
   })
 })
+
+describe('no confundir productos que solo comparten el principio', () => {
+  const CON_PAPAS: ProductoCatalogo[] = [
+    ...CATALOGO,
+    producto('papa-sabanera-2', 'Papa sabanera', 'KG', 4000, 5200),
+  ]
+
+  it('"papá pastusa" no puede caer en Papaya', () => {
+    // "papa" es prefijo de "papaya". Sin pesar menos las coincidencias parciales,
+    // Papaya le ganaba a todas las papas y se le metia el precio equivocado.
+    const m = emparejar('papa pastusa', CON_PAPAS)
+    expect(m?.producto.id).not.toBe('papaya')
+  })
+
+  it('una papa que no esta en el catalogo se manda a no reconocidos', () => {
+    // Mejor pedirle al usuario que la agregue que colarla en otra papa.
+    const { cambios, noReconocidos } = parsearLista('Papá pastusa vender 1400', CON_PAPAS)
+    expect(cambios).toHaveLength(0)
+    expect(noReconocidos).toHaveLength(1)
+    expect(noReconocidos[0].textoDetectado).toContain('pastusa')
+  })
+
+  it('sigue emparejando lo que si corresponde', () => {
+    expect(emparejar('papa criolla', CON_PAPAS)?.producto.id).toBe('criolla')
+    expect(emparejar('papaya', CON_PAPAS)?.producto.id).toBe('papaya')
+    expect(emparejar('papa lavada', CON_PAPAS)?.producto.id).toBe('papa-lavada')
+  })
+
+  it('una palabra exacta no pierde su pareja contra una parcial', () => {
+    // "papa" exacto en "Papa lavada" vale mas que "papa"~"papaya" por prefijo.
+    const dos = [producto('papaya', 'Papaya', 'LB', 6400, 8320), producto('papa', 'Papa', 'KG', 1800, 2340)]
+    expect(emparejar('papa pastusa', dos)?.producto.id).toBe('papa')
+  })
+})

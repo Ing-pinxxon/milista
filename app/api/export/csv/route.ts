@@ -1,3 +1,4 @@
+import { puedeEscribir, respuestaSinAcceso } from '@/lib/auth'
 import { obtenerCatalogo } from '@/lib/consultas'
 
 // Depende de la base: no se puede prerenderizar en el build.
@@ -22,7 +23,10 @@ function campo(v: string | number | null): string {
  * que se usa hoy, para poder pegarlo encima sin reacomodar nada.
  */
 export async function GET() {
-  const productos = await obtenerCatalogo()
+  // Trae la columna de precio de compra: esto no es publico.
+  if (!puedeEscribir()) return respuestaSinAcceso()
+
+  const productos = await obtenerCatalogo(true)
 
   const filas = [
     ['Producto', 'Unidad', 'Precio compra', 'Precio venta'],

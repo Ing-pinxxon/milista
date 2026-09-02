@@ -73,6 +73,9 @@ export function GraficaHistorico({ puntos }: { puntos: PuntoPrecio[] }) {
 
   const ventas = serie('venta')
   const costos = serie('costo')
+  // Sin clave no llegan costos: la grafica se queda solo con la venta y no debe
+  // anunciar una serie que no existe.
+  const hayCostos = costos.length > 0
 
   const marcasY = [escala.y0, (escala.y0 + escala.y1) / 2, escala.y1]
   const punto = activo != null ? puntos[activo] : null
@@ -84,10 +87,12 @@ export function GraficaHistorico({ puntos }: { puntos: PuntoPrecio[] }) {
           <span className="h-2 w-4 rounded-sm" style={{ background: COLOR_VENTA }} />
           <span className="text-neutral-400">Venta</span>
         </span>
-        <span className="flex items-center gap-1.5">
-          <span className="h-2 w-4 rounded-sm" style={{ background: COLOR_COSTO }} />
-          <span className="text-neutral-400">Compra</span>
-        </span>
+        {hayCostos && (
+          <span className="flex items-center gap-1.5">
+            <span className="h-2 w-4 rounded-sm" style={{ background: COLOR_COSTO }} />
+            <span className="text-neutral-400">Compra</span>
+          </span>
+        )}
         <button
           onClick={() => setVerTabla((v) => !v)}
           className="ml-auto text-neutral-500 underline underline-offset-2"
@@ -102,7 +107,7 @@ export function GraficaHistorico({ puntos }: { puntos: PuntoPrecio[] }) {
             <thead className="border-b border-neutral-800 text-[11px] uppercase tracking-wider text-neutral-500">
               <tr>
                 <th className="px-3 py-2 font-normal">Fecha</th>
-                <th className="px-3 py-2 font-normal">Compra</th>
+                {hayCostos && <th className="px-3 py-2 font-normal">Compra</th>}
                 <th className="px-3 py-2 font-normal">Venta</th>
               </tr>
             </thead>
@@ -110,7 +115,7 @@ export function GraficaHistorico({ puntos }: { puntos: PuntoPrecio[] }) {
               {[...puntos].reverse().map((p, i) => (
                 <tr key={i} className="border-b border-neutral-900 last:border-0">
                   <td className="px-3 py-2 text-neutral-400">{fmtFecha(p.fecha)}</td>
-                  <td className="px-3 py-2">{cop(p.costo)}</td>
+                  {hayCostos && <td className="px-3 py-2">{cop(p.costo)}</td>}
                   <td className="px-3 py-2 text-amber-400">{cop(p.venta)}</td>
                 </tr>
               ))}
@@ -204,7 +209,7 @@ export function GraficaHistorico({ puntos }: { puntos: PuntoPrecio[] }) {
           {punto && (
             <div className="mt-2 flex flex-wrap items-center gap-3 rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-2 font-mono text-[13px] tabular-nums">
               <span className="text-neutral-400">{fmtFecha(punto.fecha)}</span>
-              <span style={{ color: COLOR_COSTO }}>compra {cop(punto.costo)}</span>
+              {hayCostos && <span style={{ color: COLOR_COSTO }}>compra {cop(punto.costo)}</span>}
               <span style={{ color: COLOR_VENTA }}>venta {cop(punto.venta)}</span>
             </div>
           )}
