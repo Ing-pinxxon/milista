@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FilaProducto } from './fila-producto'
+import { ModalCompras } from './modal-compras'
 import { ModalLista } from './modal-lista'
 import { ModalNuevo } from './modal-nuevo'
 import { PedirClave } from './pedir-clave'
@@ -9,7 +10,7 @@ import { normalizar } from '@/lib/normalizar'
 import { guardarCatalogo, leerCatalogo } from '@/lib/offline'
 import type { ProductoConPrecio } from '@/lib/tipos'
 
-type Modo = 'lista' | 'nuevo' | 'clave' | null
+type Modo = 'lista' | 'compras' | 'nuevo' | 'clave' | null
 
 const hoyISO = () => new Date().toISOString().slice(0, 10)
 
@@ -182,8 +183,16 @@ export function AppPrecios({
             Pegar lista del día
           </button>
           <button
+            onClick={() => setModo(puedeEscribir ? 'compras' : 'clave')}
+            className="min-h-[52px] flex-1 rounded-xl border-2 border-amber-400 font-bold text-amber-400 active:opacity-80"
+          >
+            Lista de compras
+          </button>
+        </div>
+        <div className="mt-2 flex gap-2">
+          <button
             onClick={() => setModo(puedeEscribir ? 'nuevo' : 'clave')}
-            className="min-h-[52px] rounded-xl border border-neutral-700 px-4 font-mono text-[11px] uppercase tracking-wider text-neutral-300"
+            className="min-h-[40px] flex-1 rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
           >
             + Producto
           </button>
@@ -219,6 +228,22 @@ export function AppPrecios({
           onAplicado={(n) => {
             setModo(null)
             flash(`${n} actualizado${n === 1 ? '' : 's'}`)
+            refrescar()
+          }}
+        />
+      )}
+
+      {modo === 'compras' && (
+        <ModalCompras
+          productos={productos}
+          onCerrar={(huboCambios) => {
+            setModo(null)
+            if (huboCambios) refrescar()
+          }}
+          onPedirClave={() => setModo('clave')}
+          onAplicado={(n) => {
+            setModo(null)
+            flash(n === 0 ? 'Lista cerrada' : `${n} precio${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}`)
             refrescar()
           }}
         />

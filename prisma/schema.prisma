@@ -29,6 +29,16 @@ enum OrigenPrecio {
   SEED
   LISTA
   MANUAL
+  COMPRA
+}
+
+enum EstadoLista {
+  /// Se esta decidiendo que hace falta.
+  ARMANDO
+  /// Se esta comprando: se chulea y se anota el precio de cada cosa.
+  COMPRANDO
+  /// Ya se aplicaron los precios.
+  CERRADA
 }
 
 model Producto {
@@ -65,6 +75,7 @@ model Producto {
   aliases String[] @default([])
 
   precios Precio[]
+  items   ItemLista[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -110,4 +121,56 @@ model Actualizacion {
   createdAt DateTime @default(now())
 
   @@index([fecha(sort: Desc)])
+}
+
+/// La lista de lo que hay que comprar en la plaza.
+///
+/// Se arma en el local marcando lo que falta, se chulea comprando y anotando el
+/// precio de cada cosa, y al cerrarla esos precios pasan por la misma pantalla de
+/// revision que la lista de WhatsApp antes de tocar nada.
+model ListaCompra {
+  id     String      @id @default(cuid())
+  fecha  DateTime    @default(now())
+  estado EstadoLista @default(ARMANDO)
+  notas  String?
+
+  items ItemLista[]
+
+  /// La actualizacion de precios que produjo al cerrarse, si produjo alguna.
+  actualizacionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([estado, fecha(sort: Desc)])
+}
+
+model ItemLista {
+  id      String      @id @default(cuid())
+  listaId String
+  lista   ListaCompra @relation(fields: [listaId], references: [id], onDelete: Cascade)
+
+  /// null cuando es algo que no esta en el catalogo.
+  productoId String?
+  producto   Producto? @relation(fields: [productoId], references: [id], onDelete: Cascade)
+
+  /// Para lo que hay que recordar y no es un producto: "bolsas negras",
+  /// "cobrarle a don Julio". Se usa cuando productoId es null.
+  texto String?
+
+  comprado Boolean @default(false)
+
+  /// El precio anotado en la plaza, en la unidad de abajo.
+  costo Int?
+
+  /// Como se compro. Puede no coincidir con la unidad del producto: un dia la
+  /// papaya viene por libra y otro por kilo.
+  unidad Unidad?
+
+  orden Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([listaId, productoId])
+  @@index([listaId, orden])
 }

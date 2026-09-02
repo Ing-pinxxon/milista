@@ -41,6 +41,14 @@ producto y la próxima vez empareja solo.
 habichuela y alverja 1.25; curuba y arándanos 1.20; coliseros 1.4545…). La venta se
 redondea hacia arriba al múltiplo de 50.
 
+**Armar la lista de compras.** El otro lado del ciclo: en vez de recibir la lista, la
+app ayuda a hacerla. Propone lo que está marcado sin existencia y lo que lleva días sin
+actualizarse, se le añade lo que falte y cualquier recordatorio suelto («bolsas negras»).
+En la plaza se va chuleando cada cosa y anotando a cómo salió y en qué unidad; al
+terminar, esos precios pasan por la misma pantalla de revisión antes de aplicarse. La
+libra se convierte a kilo sola. La lista queda guardada tal como quedó, para poder
+auditar de dónde salió cada precio.
+
 **Histórico y exportación.** Gráfica de costo y venta en el tiempo por producto,
 CSV con las columnas de la hoja de cálculo, y un botón que copia las dos columnas
 (compra y venta) en el orden exacto de las filas para pegarlas encima.
@@ -162,12 +170,14 @@ app/
     export/csv/                CSV para la hoja de cálculo
     sesion/                    entrega la cookie a cambio de la clave
     setup/                     carga el catálogo tras el primer despliegue
+    listas/                    la lista de compras: abrir, guardar, cerrar
 components/                    interfaz
 lib/
   parser.ts                    interpreta la lista. Función pura, con tests
   normalizar.ts                limpieza de texto y aliases
   precios.ts                   redondeo a 50, margen, formato de pesos
   consultas.ts                 catálogo con el precio vigente
+  compras.ts                   qué sugerir llevar a la plaza. Con tests
   conexion.mjs                 encuentra la base sin depender del nombre de la variable
   productos.ts                 los 112 productos con su unidad y su precio
   seed.ts                      carga el catálogo. La usan el CLI y /api/setup
