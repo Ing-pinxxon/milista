@@ -81,6 +81,26 @@ otra cosa. La app no depende del nombre: recorre las variables, se queda con las
 son una URL de Postgres y distingue la agrupada de la directa por el propio host. No
 tienes que renombrar nada.
 
+### Si al reconectar la base Vercel dice que la variable ya existe
+
+> This project already has an existing environment variable with name
+> `DATABASE_URL_UNPOOLED` in one of the chosen environments
+
+Son las variables que dejó la conexión anterior. **Bórralas antes de reconectar**, no le
+pongas un prefijo distinto para esquivarlas: si quedan las viejas y las nuevas a la vez,
+la app puede terminar hablando con la base vieja sin que nada falle a la vista, guardando
+los precios donde no es.
+
+1. **Settings → Environment Variables**: borra `DATABASE_URL`, `DATABASE_URL_UNPOOLED` y
+   cualquier `POSTGRES_*` o `PG*`. No toques `CLAVE_ESCRITURA`.
+2. **Storage → tu base → Connect Project**, con el campo de prefijo **vacío**.
+3. **Redeploy.**
+
+El log del build dice siempre qué variable se usó (`consultas desde STORAGE_URL…`) y avisa
+si encuentra URLs apuntando a bases distintas. Si aun así necesitas fijarlo a mano, define
+`MILISTA_DATABASE_URL` (y opcionalmente `MILISTA_DATABASE_URL_UNPOOLED`): esa gana sobre
+cualquier otra.
+
 ---
 
 ## Desplegar en Vercel

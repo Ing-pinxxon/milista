@@ -7,7 +7,7 @@
  * y en Vercel la base puede haber quedado con un prefijo propio.
  */
 import { existsSync, writeFileSync } from 'node:fs'
-import { resolverConexiones } from '../lib/conexion.mjs'
+import { advertirSiAmbiguo, resolverConexiones } from '../lib/conexion.mjs'
 
 const RUTA = '.env'
 
@@ -17,7 +17,8 @@ if (existsSync(RUTA)) {
   process.exit(0)
 }
 
-const { agrupada, directa } = resolverConexiones()
+const conexiones = resolverConexiones()
+const { agrupada, directa, nombreAgrupada, nombreDirecta } = conexiones
 
 writeFileSync(
   RUTA,
@@ -29,7 +30,9 @@ writeFileSync(
   ].join('\n'),
 )
 
-const mismas = agrupada === directa
+// Queda en el log del build: si algun dia se conecta a la base que no es, aqui
+// se ve de que variable salio.
 console.log(
-  `preparar-env: .env escrito (${mismas ? 'una sola conexion' : 'agrupada + directa'}).`,
+  `preparar-env: consultas desde ${nombreAgrupada}, migraciones desde ${nombreDirecta}.`,
 )
+advertirSiAmbiguo(conexiones)
