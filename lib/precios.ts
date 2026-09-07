@@ -8,9 +8,61 @@ export function redondear50(v: number): number {
   return Math.ceil((v - 1e-6) / 50) * 50
 }
 
-/** Precio de venta a partir del costo y el margen propio del producto. */
-export function calcularVenta(costo: number, margen: number): number {
-  return redondear50(costo * margen)
+export type TipoGanancia = 'PORCENTAJE' | 'PESOS'
+
+/**
+ * Lo que se le gana a un producto.
+ *
+ * Dos formas, porque no todo se cobra igual: la fruta se maneja por porcentaje,
+ * pero a un jabon o a un cafe se le gana una cantidad fija sin importar cuanto
+ * suba el proveedor.
+ */
+export interface Ganancia {
+  tipo: TipoGanancia
+  /** Multiplicador cuando el tipo es PORCENTAJE: 1.30 es ganarle el 30%. */
+  margen: number
+  /** Pesos fijos sobre el costo cuando el tipo es PESOS. */
+  pesos: number | null
+}
+
+/** Precio de venta a partir del costo y de lo que se le gana al producto. */
+export function calcularVenta(costo: number, ganancia: Ganancia): number {
+  if (ganancia.tipo === 'PESOS' && ganancia.pesos != null) {
+    return redondear50(costo + ganancia.pesos)
+  }
+  return redondear50(costo * ganancia.margen)
+}
+
+/**
+ * La ganancia que explica un par costo/venta.
+ *
+ * Se usa cuando se corrige la venta a mano: si no, quedaria guardada la ganancia
+ * vieja y la siguiente lista volveria a subir el precio deshaciendo la correccion.
+ */
+export function gananciaDesde(costo: number, venta: number, tipo: TipoGanancia): Ganancia {
+  if (tipo === 'PESOS') return { tipo, margen: 1.3, pesos: Math.round(venta - costo) }
+  // Un costo en cero no permite deducir porcentaje: se conserva el 1.30 de siempre.
+  return { tipo, margen: costo > 0 ? Number((venta / costo).toFixed(6)) : 1.3, pesos: null }
+}
+
+/** El porcentaje que se le gana, para mostrarlo como lo piensa el usuario. */
+export function porcentajeDe(margen: number): number {
+  return Math.round((margen - 1) * 100)
+}
+
+/**
+ * true si con esa ganancia el producto se vende igual o por debajo de lo que
+ * cuesta. Es facil de teclear por error (un 3 en vez de un 30) y no avisa nadie.
+ */
+export function esPerdida(costo: number | null, ganancia: Ganancia): boolean {
+  if (costo == null || costo <= 0) return false
+  return calcularVenta(costo, ganancia) <= costo
+}
+
+/** Etiqueta corta: "+30%" o "+$900". */
+export function describirGanancia(ganancia: Ganancia): string {
+  if (ganancia.tipo === 'PESOS' && ganancia.pesos != null) return `+${cop(ganancia.pesos)}`
+  return `+${porcentajeDe(ganancia.margen)}%`
 }
 
 /** Formato de pesos colombianos para pantalla. */

@@ -37,9 +37,14 @@ o asignarlo a un producto existente.
 **Aprender.** Cuando se asigna una línea a mano, ese texto se guarda como alias del
 producto y la próxima vez empareja solo.
 
-**Recalcular con el margen propio.** Cada producto tiene el suyo (la mayoría 1.30;
-habichuela y alverja 1.25; curuba y arándanos 1.20; coliseros 1.4545…). La venta se
-redondea hacia arriba al múltiplo de 50.
+**Recalcular con la ganancia propia de cada producto.** Se puede fijar **por porcentaje**
+(+30%) o **por pesos fijos** (+$500, para lo que no se cobra por porcentaje). Se edita
+producto por producto o de corrido en la pantalla «Cuánto le gano», ordenada de mayor a
+menor para encontrar rápido lo que quedó alto. Avisa si la venta queda por debajo del
+costo. La venta se redondea hacia arriba al múltiplo de 50.
+
+Si corriges la venta a mano, la ganancia se ajusta a lo que pusiste, de modo que la
+siguiente lista respete tu decisión en vez de volver a subir el precio.
 
 **Armar la lista de compras.** El otro lado del ciclo: en vez de recibir la lista, la
 app ayuda a hacerla. Propone lo que está marcado sin existencia y lo que lleva días sin

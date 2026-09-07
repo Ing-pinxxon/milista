@@ -5,6 +5,7 @@ import { Modal } from './modal'
 import { normalizar } from '@/lib/normalizar'
 import { calcularVenta, cop } from '@/lib/precios'
 import { sugerirCompras } from '@/lib/compras'
+import { gananciaDe } from '@/lib/parser'
 import {
   UNIDADES_COMPRA,
   costoNormalizado,
@@ -188,7 +189,7 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
         return {
           producto: p,
           costo,
-          venta: calcularVenta(costo, p.margen),
+          venta: calcularVenta(costo, gananciaDe(p)),
           convertido: i.unidad === 'LB',
         }
       })

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState } from 'react'
-import { cop, calcularVenta } from '@/lib/precios'
+import { EditorGanancia } from './editor-ganancia'
+import { gananciaDe as gananciaDeProducto } from '@/lib/parser'
+import { calcularVenta, cop, describirGanancia, type Ganancia } from '@/lib/precios'
 import { ETIQUETA_UNIDAD, type ProductoConPrecio } from '@/lib/tipos'
 
 const hoyISO = () => new Date().toISOString().slice(0, 10)
@@ -10,6 +12,7 @@ interface Props {
   producto: ProductoConPrecio
   puedeEscribir: boolean
   onEditar: (id: string, costo: number | null, venta: number | null) => void
+  onGanancia: (id: string, ganancia: Ganancia) => void
   onPedirClave: () => void
 }
 
@@ -18,7 +21,7 @@ interface Props {
  * consulta a diario. Los campos de edicion viven en un panel que se abre al
  * tocar la fila, para que la lista se pueda barrer con la vista sin ruido.
  */
-export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }: Props) {
+export function FilaProducto({ producto, puedeEscribir, onEditar, onGanancia, onPedirClave }: Props) {
   const [abierto, setAbierto] = useState(false)
   const [costo, setCosto] = useState(producto.costoActual?.toString() ?? '')
   const [venta, setVenta] = useState(producto.ventaActual?.toString() ?? '')
@@ -36,7 +39,7 @@ export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }
 
   const aplicarMargen = () => {
     if (costo === '') return
-    const v = String(calcularVenta(Number(costo), producto.margen))
+    const v = String(calcularVenta(Number(costo), gananciaDeProducto(producto)))
     setVenta(v)
     guardar(costo, v)
   }
@@ -98,13 +101,24 @@ export function FilaProducto({ producto, puedeEscribir, onEditar, onPedirClave }
               />
             </label>
           </div>
+          <EditorGanancia
+            ganancia={gananciaDeProducto(producto)}
+            costo={costo === '' ? null : Number(costo)}
+            onGuardar={(g) => {
+              if (!puedeEscribir) return onPedirClave()
+              onGanancia(producto.id, g)
+              // La venta que se ve se pone al dia con la ganancia nueva.
+              if (costo !== '') setVenta(String(calcularVenta(Number(costo), g)))
+            }}
+          />
+
           <div className="flex gap-2">
             <button
               onClick={aplicarMargen}
               disabled={costo === ''}
               className="min-h-[44px] flex-1 rounded-xl border border-neutral-700 font-mono text-[11px] uppercase tracking-wider text-neutral-300 disabled:opacity-30"
             >
-              Aplicar margen ×{producto.margen.toFixed(2)}
+              Aplicar {describirGanancia(gananciaDeProducto(producto))}
             </button>
             <a
               href={`/historico/${producto.slug}`}

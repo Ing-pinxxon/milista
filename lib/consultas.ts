@@ -13,7 +13,9 @@ interface FilaCruda {
   nombre: string
   slug: string
   unidad: UnidadProducto | null
+  tipoGanancia: 'PORCENTAJE' | 'PESOS'
   margen: unknown
+  gananciaPesos: number | null
   aliases: string[]
   orden: number
   disponible: boolean
@@ -40,7 +42,8 @@ interface FilaCruda {
  */
 export async function obtenerCatalogo(conCostos: boolean): Promise<ProductoConPrecio[]> {
   const filas = await prisma.$queryRaw<FilaCruda[]>`
-    SELECT p.id, p.nombre, p.slug, p.unidad, p.margen, p.aliases, p.orden, p.disponible,
+    SELECT p.id, p.nombre, p.slug, p.unidad, p."tipoGanancia", p.margen, p."gananciaPesos",
+           p.aliases, p.orden, p.disponible,
            pr.costo, pr.venta, pr.fecha, pr.origen
     FROM "Producto" p
     LEFT JOIN LATERAL (
@@ -59,7 +62,9 @@ export async function obtenerCatalogo(conCostos: boolean): Promise<ProductoConPr
     nombre: f.nombre,
     slug: f.slug,
     unidad: f.unidad,
+    tipoGanancia: f.tipoGanancia,
     margen: conCostos ? Number(f.margen) : 0,
+    gananciaPesos: conCostos ? f.gananciaPesos : null,
     aliases: f.aliases,
     orden: f.orden,
     disponible: f.disponible,

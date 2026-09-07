@@ -6,7 +6,7 @@
  * Quien escribe en la base es la API route, nunca este archivo.
  */
 import { limpiarNombre, normalizar } from './normalizar'
-import { calcularVenta, parseNumero } from './precios'
+import { calcularVenta, parseNumero, type Ganancia, type TipoGanancia } from './precios'
 
 export type UnidadProducto = 'KG' | 'LB' | 'UNIDAD' | 'PAQUETE' | 'BULTO'
 export type UnidadDetectada = 'kg' | 'lb' | 'unidad'
@@ -17,7 +17,10 @@ export interface ProductoCatalogo {
   nombre: string
   slug: string
   unidad: UnidadProducto | null
+  /** Como se le calcula la venta: por porcentaje o por pesos fijos. */
+  tipoGanancia: TipoGanancia
   margen: number
+  gananciaPesos: number | null
   aliases: string[]
   costoActual: number | null
   ventaActual: number | null
@@ -245,6 +248,15 @@ function puntuar(q: string, nombre: string): number {
   return 0.7 * dicePalabras(q.split(' '), nombre.split(' ')) + 0.3 * dice(bigramas(q), bigramas(nombre))
 }
 
+/** La ganancia del producto en la forma que espera calcularVenta. */
+export function gananciaDe(producto: ProductoCatalogo): Ganancia {
+  return {
+    tipo: producto.tipoGanancia,
+    margen: producto.margen,
+    pesos: producto.gananciaPesos,
+  }
+}
+
 export interface Emparejamiento {
   producto: ProductoCatalogo
   confianza: Confianza
@@ -365,7 +377,7 @@ export function parsearLista(texto: string, catalogo: ProductoCatalogo[]): Resul
         cambio.convertidoDeLibra = convertidoDeLibra
         // La venta explicita manda sobre el margen, venga antes o despues en la linea.
         if (!cambio.ventaEsExplicita) {
-          cambio.despues.venta = calcularVenta(cambio.despues.costo, producto.margen)
+          cambio.despues.venta = calcularVenta(cambio.despues.costo, gananciaDe(producto))
         }
       }
     }

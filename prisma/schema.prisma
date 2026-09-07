@@ -32,6 +32,14 @@ enum OrigenPrecio {
   COMPRA
 }
 
+/// Como se calcula lo que se le gana a un producto.
+enum TipoGanancia {
+  /// Un multiplicador sobre el costo: 1.30 es ganarle el 30%.
+  PORCENTAJE
+  /// Unos pesos fijos encima del costo, sin importar cuanto suba.
+  PESOS
+}
+
 enum EstadoLista {
   /// Se esta decidiendo que hace falta.
   ARMANDO
@@ -52,10 +60,17 @@ model Producto {
   unidad    Unidad?
   categoria String?
 
-  /// Margen propio del producto: venta = redondear50(costo * margen).
+  /// Como se calcula la venta de este producto.
+  tipoGanancia TipoGanancia @default(PORCENTAJE)
+
+  /// Multiplicador cuando tipoGanancia es PORCENTAJE: venta = redondear50(costo * margen).
   /// Va de 1.088235 (alverja desgranada) a 1.454545 (coliseros). Seis decimales:
   /// con menos, el redondeo a 50 salta de bucket (1666 x 1.3205 -> 2250 en vez de 2200).
   margen Decimal @db.Decimal(10, 6)
+
+  /// Pesos fijos sobre el costo cuando tipoGanancia es PESOS. Sirve para lo que
+  /// no se cobra por porcentaje: "a esto le gano 500 pesos y ya".
+  gananciaPesos Int?
 
   /// Posicion en la hoja de calculo. El boton "copiar columnas" pega compra y venta
   /// en ese orden exacto, asi que alterarlo desalinea la hoja del usuario.

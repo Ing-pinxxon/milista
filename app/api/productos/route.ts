@@ -1,7 +1,7 @@
 import { puedeEscribir, respuestaSinAcceso } from '@/lib/auth'
 import { obtenerCatalogo } from '@/lib/consultas'
 import { limpiarNombre, slugificar } from '@/lib/normalizar'
-import { calcularVenta } from '@/lib/precios'
+import { calcularVenta, gananciaDesde, type TipoGanancia } from '@/lib/precios'
 import { prisma } from '@/lib/prisma'
 import type { Unidad } from '@prisma/client'
 
@@ -24,7 +24,9 @@ export async function POST(req: Request) {
     unidad?: Unidad | null
     costo?: number | null
     venta?: number | null
+    tipoGanancia?: TipoGanancia
     margen?: number
+    gananciaPesos?: number | null
     alias?: string
   }
 
@@ -37,8 +39,19 @@ export async function POST(req: Request) {
   }
 
   const costo = body.costo ?? null
-  const margen = body.margen ?? (costo && body.venta ? body.venta / costo : 1.3)
-  const venta = body.venta ?? (costo ? calcularVenta(costo, margen) : null)
+  const tipoGanancia: TipoGanancia = body.tipoGanancia ?? 'PORCENTAJE'
+
+  // Si vienen costo y venta, la ganancia sale de ese par; si no, la de siempre.
+  const ganancia =
+    costo && body.venta
+      ? gananciaDesde(costo, body.venta, tipoGanancia)
+      : {
+          tipo: tipoGanancia,
+          margen: body.margen ?? 1.3,
+          pesos: body.gananciaPesos ?? null,
+        }
+
+  const venta = body.venta ?? (costo ? calcularVenta(costo, ganancia) : null)
 
   // Va al final de la hoja de calculo para no correr las filas existentes.
   const ultimo = await prisma.producto.findFirst({ orderBy: { orden: 'desc' }, select: { orden: true } })
@@ -48,7 +61,9 @@ export async function POST(req: Request) {
       nombre: nombre.charAt(0).toUpperCase() + nombre.slice(1),
       slug,
       unidad: body.unidad ?? null,
-      margen: Number(margen.toFixed(6)),
+      tipoGanancia,
+      margen: Number(ganancia.margen.toFixed(6)),
+      gananciaPesos: ganancia.pesos,
       orden: (ultimo?.orden ?? -1) + 1,
       aliases: body.alias ? [limpiarNombre(body.alias)] : [],
       precios: costo != null || venta != null ? { create: { costo, venta, origen: 'MANUAL' } } : undefined,

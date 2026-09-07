@@ -3,14 +3,16 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { FilaProducto } from './fila-producto'
 import { ModalCompras } from './modal-compras'
+import { ModalGanancias } from './modal-ganancias'
 import { ModalLista } from './modal-lista'
 import { ModalNuevo } from './modal-nuevo'
 import { PedirClave } from './pedir-clave'
 import { normalizar } from '@/lib/normalizar'
 import { guardarCatalogo, leerCatalogo } from '@/lib/offline'
+import type { Ganancia } from '@/lib/precios'
 import type { ProductoConPrecio } from '@/lib/tipos'
 
-type Modo = 'lista' | 'compras' | 'nuevo' | 'clave' | null
+type Modo = 'lista' | 'compras' | 'ganancias' | 'nuevo' | 'clave' | null
 
 const hoyISO = () => new Date().toISOString().slice(0, 10)
 
@@ -79,6 +81,20 @@ export function AppPrecios({
             : p,
         ),
       )
+    }
+  }
+
+  /** Guarda cuanto se le gana al producto y refleja la venta nueva. */
+  const guardarGanancia = async (id: string, g: Ganancia) => {
+    const r = await fetch(`/api/productos/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipoGanancia: g.tipo, margen: g.margen, gananciaPesos: g.pesos }),
+    })
+    if (r.status === 401) return setModo('clave')
+    if (r.ok) {
+      flash('Ganancia guardada')
+      refrescar()
     }
   }
 
@@ -162,6 +178,7 @@ export function AppPrecios({
               producto={p}
               puedeEscribir={puedeEscribir}
               onEditar={editar}
+              onGanancia={guardarGanancia}
               onPedirClave={() => setModo('clave')}
             />
           ))}
@@ -195,6 +212,12 @@ export function AppPrecios({
             className="min-h-[40px] flex-1 rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
           >
             + Producto
+          </button>
+          <button
+            onClick={() => setModo(puedeEscribir ? 'ganancias' : 'clave')}
+            className="min-h-[40px] flex-1 rounded-lg border border-neutral-800 font-mono text-[10px] uppercase tracking-wider text-neutral-500"
+          >
+            Cuánto le gano
           </button>
         </div>
         {/* Las dos exportaciones llevan el precio de compra: solo con clave. */}
@@ -245,6 +268,20 @@ export function AppPrecios({
             setModo(null)
             flash(n === 0 ? 'Lista cerrada' : `${n} precio${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}`)
             refrescar()
+          }}
+        />
+      )}
+
+      {modo === 'ganancias' && (
+        <ModalGanancias
+          productos={productos}
+          onPedirClave={() => setModo('clave')}
+          onCerrar={(huboCambios) => {
+            setModo(null)
+            if (huboCambios) {
+              flash('Ganancias guardadas')
+              refrescar()
+            }
           }}
         />
       )}
