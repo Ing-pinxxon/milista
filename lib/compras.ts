@@ -39,6 +39,57 @@ export function sugerirCompras(
     return desactualizado ? [{ producto, motivo: 'sin-actualizar' }] : []
   })
 
-  // El orden de la hoja de calculo, que es el que el usuario tiene en la cabeza.
-  return sugerencias.sort((a, b) => a.producto.orden - b.producto.orden)
+  // El recorrido de la plaza manda sobre el orden de la hoja: si ya se compro
+  // antes, se respeta el puesto en que se compro. Lo que nunca se ha comprado va
+  // al final, en el orden de la hoja.
+  return sugerencias.sort((a, b) => {
+    const oa = a.producto.ordenCompra
+    const ob = b.producto.ordenCompra
+    if (oa != null && ob != null) return oa - ob
+    if (oa != null) return -1
+    if (ob != null) return 1
+    return a.producto.orden - b.producto.orden
+  })
+}
+
+/** Lo minimo que necesita saber el ordenamiento de un renglon de la lista. */
+export interface RenglonOrdenable {
+  productoId: string | null
+  comprado: boolean
+  costo: number | null
+}
+
+/**
+ * Si el renglon ya esta resuelto y puede bajarse al final.
+ *
+ * Un producto no esta listo con solo chulearlo: falta el precio, y si bajara
+ * antes, el campo se iria de debajo del dedo justo al ir a escribirlo. Una nota
+ * suelta no lleva precio, asi que con chulearla basta.
+ */
+export function estaListo(item: RenglonOrdenable): boolean {
+  if (!item.comprado) return false
+  return item.productoId ? item.costo != null : true
+}
+
+/**
+ * El orden en que se ven los renglones: primero lo que falta, y al final lo ya
+ * resuelto. Dentro de cada grupo se conserva el orden del recorrido.
+ *
+ * Devuelve indices sobre el arreglo original, para no perder cual es cual.
+ */
+export function ordenParaMostrar(items: RenglonOrdenable[]): number[] {
+  const indices = items.map((_, i) => i)
+  return [
+    ...indices.filter((i) => !estaListo(items[i])),
+    ...indices.filter((i) => estaListo(items[i])),
+  ]
+}
+
+/** Mueve un elemento de una posicion a otra, conservando el resto del orden. */
+export function moverItem<T>(items: T[], desde: number, hasta: number): T[] {
+  if (desde === hasta || desde < 0 || desde >= items.length) return items
+  const copia = [...items]
+  const [movido] = copia.splice(desde, 1)
+  copia.splice(Math.max(0, Math.min(hasta, copia.length)), 0, movido)
+  return copia
 }

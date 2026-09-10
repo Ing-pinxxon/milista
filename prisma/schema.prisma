@@ -76,6 +76,11 @@ model Producto {
   /// en ese orden exacto, asi que alterarlo desalinea la hoja del usuario.
   orden Int
 
+  /// En que puesto se compro este producto la ultima vez que se cerro una lista.
+  /// Con esto la lista siguiente sale en el orden del recorrido por la plaza, y no
+  /// en el de la hoja de calculo.
+  ordenCompra Int?
+
   activo Boolean @default(true)
 
   /// El "no hay" / ❌ de la lista diaria. Marca falta de existencia sin borrar el

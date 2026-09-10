@@ -49,8 +49,12 @@ siguiente lista respete tu decisión en vez de volver a subir el precio.
 **Armar la lista de compras.** El otro lado del ciclo: en vez de recibir la lista, la
 app ayuda a hacerla. Propone lo que está marcado sin existencia y lo que lleva días sin
 actualizarse, se le añade lo que falte y cualquier recordatorio suelto («bolsas negras»).
-En la plaza se va chuleando cada cosa y anotando a cómo salió y en qué unidad; al
-terminar, esos precios pasan por la misma pantalla de revisión antes de aplicarse. La
+La lista va en el orden del recorrido por la plaza: se puede reacomodar manteniendo
+pulsado un renglón y arrastrándolo, y al cerrar una lista la app se queda con el orden
+en que se fue comprando, así que la siguiente sale ya acomodada. En la plaza se va
+chuleando cada cosa y anotando a cómo salió y en qué unidad; lo que ya quedó con precio
+se baja al final para dejar arriba lo que falta. Al terminar, esos precios pasan por la
+misma pantalla de revisión antes de aplicarse. La
 libra se convierte a kilo sola. La lista queda guardada tal como quedó, para poder
 auditar de dónde salió cada precio.
 

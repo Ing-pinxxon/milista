@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { Modal } from './modal'
 import { normalizar } from '@/lib/normalizar'
 import { calcularVenta, cop } from '@/lib/precios'
-import { sugerirCompras } from '@/lib/compras'
+import { estaListo, moverItem, ordenParaMostrar, sugerirCompras } from '@/lib/compras'
+import { usarArrastre } from '@/lib/usar-arrastre'
 import { gananciaDe } from '@/lib/parser'
 import {
   UNIDADES_COMPRA,
@@ -119,6 +120,21 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
   }
 
   const quitar = (i: number) => setItems((xs) => xs.filter((_, j) => j !== i))
+
+  // Lo resuelto baja al final; el orden del recorrido se conserva por debajo.
+  const visibles = useMemo(() => ordenParaMostrar(items), [items])
+
+  /** El arrastre trabaja sobre lo que se ve; se traduce al orden real. */
+  const reordenar = (desdeVista: number, hastaVista: number) => {
+    const desde = visibles[desdeVista]
+    const hasta = visibles[hastaVista]
+    if (desde == null || hasta == null) return
+    setItems((xs) => moverItem(xs, desde, hasta))
+    navigator.vibrate?.(10)
+  }
+
+  const arrastreArmar = usarArrastre(items.length, reordenar)
+  const arrastreComprar = usarArrastre(items.length, reordenar)
 
   const cambiar = (i: number, cambio: Partial<ItemListaVista>) =>
     setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...cambio } : x)))
@@ -287,32 +303,56 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
             </button>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-neutral-800">
-            {items.length === 0 && (
-              <p className="px-3 py-6 text-center text-sm text-neutral-500">La lista está vacía.</p>
-            )}
-            {items.map((it, i) => (
-              <div
-                key={it.id ?? `${it.productoId ?? it.texto}-${i}`}
-                className="flex items-center justify-between gap-2 border-b border-neutral-900 px-3 py-3 last:border-0"
-              >
-                <span className="truncate">
-                  {nombreDeItem(it)}
-                  {!it.productoId && (
-                    <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-neutral-600">
-                      nota
+          {items.length === 0 ? (
+            <p className="rounded-xl border border-neutral-800 px-3 py-6 text-center text-sm text-neutral-500">
+              La lista está vacía.
+            </p>
+          ) : (
+            <div ref={arrastreArmar.refContenedor as React.RefObject<HTMLDivElement>} className="space-y-1.5">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-600">
+                Mantén pulsado un renglón para moverlo
+              </p>
+              {visibles.map((real, vista) => {
+                const it = items[real]
+                const alzado = arrastreArmar.arrastre.indice === vista
+                return (
+                  <div
+                    key={it.id ?? `${it.productoId ?? it.texto}-${real}`}
+                    ref={(el) => arrastreArmar.registrarFila(vista, el)}
+                    {...arrastreArmar.manejadores(vista)}
+                    style={{
+                      transform: `translateY(${
+                        alzado ? arrastreArmar.arrastre.desplazamiento : arrastreArmar.desplazamientoDe(vista)
+                      }px)`,
+                      transition: alzado ? 'none' : 'transform 160ms ease',
+                      touchAction: arrastreArmar.arrastre.indice != null ? 'none' : 'manipulation',
+                    }}
+                    className={`flex select-none items-center justify-between gap-2 rounded-xl border px-3 py-3 ${
+                      alzado
+                        ? 'relative z-10 scale-[1.02] border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
+                        : 'border-neutral-800 bg-neutral-950'
+                    }`}
+                  >
+                    <span className="truncate">
+                      <span className="mr-2 font-mono text-neutral-600">⠿</span>
+                      {nombreDeItem(it)}
+                      {!it.productoId && (
+                        <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-neutral-600">
+                          nota
+                        </span>
+                      )}
                     </span>
-                  )}
-                </span>
-                <button
-                  onClick={() => quitar(i)}
-                  className="min-h-[36px] shrink-0 px-2 font-mono text-[11px] uppercase text-neutral-500"
-                >
-                  Quitar
-                </button>
-              </div>
-            ))}
-          </div>
+                    <button
+                      onClick={() => quitar(real)}
+                      className="min-h-[36px] shrink-0 px-2 font-mono text-[11px] uppercase text-neutral-500"
+                    >
+                      Quitar
+                    </button>
+                  </div>
+                )
+              })}
+            </div>
+          )}
           {error && <p className="text-sm text-red-400">{error}</p>}
         </div>
       </Modal>
@@ -351,15 +391,36 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
       >
         <div className="p-4">
           <p className="mb-3 text-sm text-neutral-400">
-            Toca cada cosa al comprarla y anota a cómo salió. Se guarda solo.
+            Toca cada cosa al comprarla y anota a cómo salió. Lo que ya quedó con precio se
+            baja al final. Mantén pulsado un renglón para moverlo de sitio.
           </p>
 
-          <div className="space-y-2">
-            {items.map((it, i) => (
+          <div ref={arrastreComprar.refContenedor as React.RefObject<HTMLDivElement>} className="space-y-2">
+            {visibles.map((real, vista) => {
+              const it = items[real]
+              const i = real
+              const alzado = arrastreComprar.arrastre.indice === vista
+              const listo = estaListo(it)
+              return (
               <div
-                key={it.id ?? i}
-                className={`rounded-xl border p-3 ${
-                  it.comprado ? 'border-neutral-700 bg-neutral-900' : 'border-neutral-800'
+                key={it.id ?? real}
+                ref={(el) => arrastreComprar.registrarFila(vista, el)}
+                {...arrastreComprar.manejadores(vista)}
+                style={{
+                  transform: `translateY(${
+                    alzado ? arrastreComprar.arrastre.desplazamiento : arrastreComprar.desplazamientoDe(vista)
+                  }px)`,
+                  transition: alzado ? 'none' : 'transform 200ms ease',
+                  touchAction: arrastreComprar.arrastre.indice != null ? 'none' : 'manipulation',
+                }}
+                className={`select-none rounded-xl border p-3 ${
+                  alzado
+                    ? 'relative z-10 scale-[1.02] border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
+                    : listo
+                      ? 'border-neutral-900 bg-neutral-900/40 opacity-60'
+                      : it.comprado
+                        ? 'border-neutral-700 bg-neutral-900'
+                        : 'border-neutral-800'
                 }`}
               >
                 <button
@@ -412,7 +473,8 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
                   </div>
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
           {error && <p className="mt-3 text-sm text-red-400">{error}</p>}
         </div>

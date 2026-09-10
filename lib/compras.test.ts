@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { sugerirCompras } from './compras'
+import { estaListo, moverItem, ordenParaMostrar, sugerirCompras } from './compras'
 import { costoNormalizado } from './tipos-compras'
 import type { ProductoConPrecio } from './consultas'
 
@@ -17,6 +17,7 @@ function producto(over: Partial<ProductoConPrecio> = {}): ProductoConPrecio {
     gananciaPesos: null,
     aliases: [],
     orden: 0,
+    ordenCompra: null,
     disponible: true,
     costoActual: 3000,
     ventaActual: 3900,
@@ -90,5 +91,94 @@ describe('costoNormalizado', () => {
 
   it('sin unidad se toma como esta', () => {
     expect(costoNormalizado(4000, null)).toBe(4000)
+  })
+})
+
+describe('el orden del recorrido por la plaza', () => {
+  it('lo ya comprado antes va en el orden en que se compro, no en el de la hoja', () => {
+    const s = sugerirCompras(
+      [
+        producto({ id: 'hoja-primero', orden: 0, ordenCompra: 2, disponible: false }),
+        producto({ id: 'hoja-ultimo', orden: 9, ordenCompra: 0, disponible: false }),
+        producto({ id: 'hoja-medio', orden: 5, ordenCompra: 1, disponible: false }),
+      ],
+      AHORA,
+    )
+    expect(s.map((x) => x.producto.id)).toEqual(['hoja-ultimo', 'hoja-medio', 'hoja-primero'])
+  })
+
+  it('lo que nunca se ha comprado va al final, en el orden de la hoja', () => {
+    const s = sugerirCompras(
+      [
+        producto({ id: 'nuevo-b', orden: 8, ordenCompra: null, disponible: false }),
+        producto({ id: 'conocido', orden: 9, ordenCompra: 0, disponible: false }),
+        producto({ id: 'nuevo-a', orden: 3, ordenCompra: null, disponible: false }),
+      ],
+      AHORA,
+    )
+    expect(s.map((x) => x.producto.id)).toEqual(['conocido', 'nuevo-a', 'nuevo-b'])
+  })
+})
+
+describe('estaListo', () => {
+  it('un producto chuleado sin precio todavia no esta listo', () => {
+    // Si bajara aqui, el campo del precio se iria de debajo del dedo.
+    expect(estaListo({ productoId: 'p', comprado: true, costo: null })).toBe(false)
+  })
+
+  it('un producto chuleado y con precio si', () => {
+    expect(estaListo({ productoId: 'p', comprado: true, costo: 3000 })).toBe(true)
+  })
+
+  it('una nota suelta basta con chulearla', () => {
+    expect(estaListo({ productoId: null, comprado: true, costo: null })).toBe(true)
+  })
+
+  it('sin chulear nunca esta listo', () => {
+    expect(estaListo({ productoId: 'p', comprado: false, costo: 3000 })).toBe(false)
+  })
+})
+
+describe('ordenParaMostrar', () => {
+  const r = (comprado: boolean, costo: number | null = null) => ({
+    productoId: 'p',
+    comprado,
+    costo,
+  })
+
+  it('lo resuelto baja al final y lo pendiente sube', () => {
+    const items = [r(true, 100), r(false), r(true, 200), r(false)]
+    expect(ordenParaMostrar(items)).toEqual([1, 3, 0, 2])
+  })
+
+  it('conserva el orden del recorrido dentro de cada grupo', () => {
+    const items = [r(true, 1), r(true, 2), r(false), r(true, 3)]
+    // Los resueltos mantienen 0, 1, 3 entre ellos.
+    expect(ordenParaMostrar(items)).toEqual([2, 0, 1, 3])
+  })
+
+  it('un chuleado sin precio no baja', () => {
+    const items = [r(true, null), r(false)]
+    expect(ordenParaMostrar(items)).toEqual([0, 1])
+  })
+})
+
+describe('moverItem', () => {
+  it('mueve hacia abajo conservando el resto', () => {
+    expect(moverItem(['a', 'b', 'c', 'd'], 0, 2)).toEqual(['b', 'c', 'a', 'd'])
+  })
+
+  it('mueve hacia arriba', () => {
+    expect(moverItem(['a', 'b', 'c', 'd'], 3, 1)).toEqual(['a', 'd', 'b', 'c'])
+  })
+
+  it('moverlo a su mismo puesto no cambia nada', () => {
+    const xs = ['a', 'b', 'c']
+    expect(moverItem(xs, 1, 1)).toBe(xs)
+  })
+
+  it('no se sale del arreglo', () => {
+    expect(moverItem(['a', 'b'], 0, 99)).toEqual(['b', 'a'])
+    expect(moverItem(['a', 'b'], 5, 0)).toEqual(['a', 'b'])
   })
 })

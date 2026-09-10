@@ -3,6 +3,8 @@ import type { ProductoCatalogo, UnidadProducto } from './parser'
 
 export interface ProductoConPrecio extends ProductoCatalogo {
   orden: number
+  /// En que puesto se compro la ultima vez. null si nunca se ha comprado.
+  ordenCompra: number | null
   fechaPrecio: string | null
   /** De donde vino el precio vigente. El seed no cuenta como cambio del dia. */
   origenPrecio: 'SEED' | 'LISTA' | 'MANUAL' | null
@@ -18,6 +20,7 @@ interface FilaCruda {
   gananciaPesos: number | null
   aliases: string[]
   orden: number
+  ordenCompra: number | null
   disponible: boolean
   costo: number | null
   venta: number | null
@@ -43,7 +46,7 @@ interface FilaCruda {
 export async function obtenerCatalogo(conCostos: boolean): Promise<ProductoConPrecio[]> {
   const filas = await prisma.$queryRaw<FilaCruda[]>`
     SELECT p.id, p.nombre, p.slug, p.unidad, p."tipoGanancia", p.margen, p."gananciaPesos",
-           p.aliases, p.orden, p.disponible,
+           p.aliases, p.orden, p."ordenCompra", p.disponible,
            pr.costo, pr.venta, pr.fecha, pr.origen
     FROM "Producto" p
     LEFT JOIN LATERAL (
@@ -67,6 +70,7 @@ export async function obtenerCatalogo(conCostos: boolean): Promise<ProductoConPr
     gananciaPesos: conCostos ? f.gananciaPesos : null,
     aliases: f.aliases,
     orden: f.orden,
+    ordenCompra: f.ordenCompra,
     disponible: f.disponible,
     costoActual: conCostos ? f.costo : null,
     ventaActual: f.venta,
