@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { FilaProducto } from './fila-producto'
 import { ModalCompras } from './modal-compras'
 import { ModalGanancias } from './modal-ganancias'
+import { ModalOrden } from './modal-orden'
 import { ModalLista } from './modal-lista'
 import { ModalNuevo } from './modal-nuevo'
 import { PedirClave } from './pedir-clave'
@@ -27,6 +28,11 @@ export function AppPrecios({
   const [puedeEscribir, setPuedeEscribir] = useState(puedeEscribirInicial)
   const [q, setQ] = useState('')
   const [modo, setModo] = useState<Modo>(null)
+  // El editor del recorrido se monta ENCIMA de la lista, sin desmontarla: si no,
+  // se perderia la lista que se esta armando y que todavia no se ha guardado.
+  const [ordenAbierto, setOrdenAbierto] = useState(false)
+  // Sube al guardar el recorrido, para que la lista en curso se reacomode.
+  const [versionOrden, setVersionOrden] = useState(0)
   const [aviso, setAviso] = useState<string | null>(null)
   const [sinConexion, setSinConexion] = useState(false)
   const caja = useRef<HTMLInputElement>(null)
@@ -264,10 +270,27 @@ export function AppPrecios({
             if (huboCambios) refrescar()
           }}
           onPedirClave={() => setModo('clave')}
+          onEditarOrden={() => setOrdenAbierto(true)}
+          versionOrden={versionOrden}
           onAplicado={(n) => {
             setModo(null)
             flash(n === 0 ? 'Lista cerrada' : `${n} precio${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}`)
             refrescar()
+          }}
+        />
+      )}
+
+      {ordenAbierto && (
+        <ModalOrden
+          productos={productos}
+          onPedirClave={() => setModo('clave')}
+          onCerrar={async (huboCambios) => {
+            setOrdenAbierto(false)
+            if (huboCambios) {
+              flash('Orden guardado')
+              await refrescar()
+              setVersionOrden((v) => v + 1)
+            }
           }}
         />
       )}

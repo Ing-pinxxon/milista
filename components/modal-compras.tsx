@@ -1,10 +1,17 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from './modal'
 import { normalizar } from '@/lib/normalizar'
 import { calcularVenta, cop } from '@/lib/precios'
-import { estaListo, moverItem, ordenParaMostrar, sugerirCompras } from '@/lib/compras'
+import {
+  construirRangos,
+  estaListo,
+  insertarEnOrden,
+  moverItem,
+  ordenParaMostrar,
+  sugerirCompras,
+} from '@/lib/compras'
 import { usarArrastre } from '@/lib/usar-arrastre'
 import { gananciaDe } from '@/lib/parser'
 import {
@@ -24,9 +31,20 @@ interface Props {
   onCerrar: (huboCambios: boolean) => void
   onAplicado: (cantidad: number) => void
   onPedirClave: () => void
+  /** Abre el editor del orden fijo del recorrido. */
+  onEditarOrden: () => void
+  /** Sube cuando se guarda un recorrido nuevo. */
+  versionOrden: number
 }
 
-export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: Props) {
+export function ModalCompras({
+  productos,
+  onCerrar,
+  onAplicado,
+  onPedirClave,
+  onEditarOrden,
+  versionOrden,
+}: Props) {
   const [paso, setPaso] = useState<Paso>('cargando')
   const [lista, setLista] = useState<ListaVista | null>(null)
   const [items, setItems] = useState<ItemListaVista[]>([])
@@ -94,18 +112,24 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
       .slice(0, 6)
   }, [busqueda, productos, enLista])
 
+  const rangos = useMemo(() => construirRangos(productos), [productos])
+
   const agregarProducto = (p: ProductoConPrecio) => {
-    setItems((xs) => [
-      ...xs,
-      {
-        productoId: p.id,
-        texto: null,
-        comprado: false,
-        costo: null,
-        unidad: p.unidad,
-        producto: { id: p.id, nombre: p.nombre, slug: p.slug, unidad: p.unidad },
-      },
-    ])
+    // En su puesto del recorrido, no al final: si no, tocaria arrastrarlo.
+    setItems((xs) =>
+      insertarEnOrden(
+        xs,
+        {
+          productoId: p.id,
+          texto: null,
+          comprado: false,
+          costo: null,
+          unidad: p.unidad,
+          producto: { id: p.id, nombre: p.nombre, slug: p.slug, unidad: p.unidad },
+        },
+        rangos,
+      ),
+    )
     setBusqueda('')
   }
 
@@ -132,6 +156,23 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
     setItems((xs) => moverItem(xs, desde, hasta))
     navigator.vibrate?.(10)
   }
+
+  // Al guardar un recorrido nuevo, la lista que se esta armando se reacomoda:
+  // es justo lo que se acaba de pedir al editarlo.
+  const primeraVez = useRef(true)
+  useEffect(() => {
+    if (primeraVez.current) {
+      primeraVez.current = false
+      return
+    }
+    setItems((xs) =>
+      [...xs].sort(
+        (a, b) =>
+          (a.productoId ? (rangos.get(a.productoId) ?? Infinity) : Infinity) -
+          (b.productoId ? (rangos.get(b.productoId) ?? Infinity) : Infinity),
+      ),
+    )
+  }, [versionOrden, rangos])
 
   const arrastreArmar = usarArrastre(items.length, reordenar)
   const arrastreComprar = usarArrastre(items.length, reordenar)
@@ -309,9 +350,17 @@ export function ModalCompras({ productos, onCerrar, onAplicado, onPedirClave }: 
             </p>
           ) : (
             <div ref={arrastreArmar.refContenedor as React.RefObject<HTMLDivElement>} className="space-y-1.5">
-              <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-600">
-                Mantén pulsado un renglón para moverlo
-              </p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-600">
+                  Mantén pulsado un renglón para moverlo
+                </p>
+                <button
+                  onClick={onEditarOrden}
+                  className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-amber-500 underline underline-offset-2"
+                >
+                  Editar orden
+                </button>
+              </div>
               {visibles.map((real, vista) => {
                 const it = items[real]
                 const alzado = arrastreArmar.arrastre.indice === vista

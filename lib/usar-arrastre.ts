@@ -6,6 +6,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const MS_PARA_ALZAR = 220
 /** Si el dedo se mueve mas que esto antes de alzarse, era scroll y se cancela. */
 const TOLERANCIA_PX = 8
+/** Franja en los bordes donde la lista empieza a desplazarse sola. */
+const BORDE_AUTOSCROLL_PX = 72
+/** Pixeles por fotograma al desplazarse sola, en el borde mismo. */
+const VELOCIDAD_AUTOSCROLL = 12
 
 export interface Arrastre {
   /** Indice del renglon alzado, o null. */
@@ -33,8 +37,23 @@ export function usarArrastre(
   const [arrastre, setArrastre] = useState<Arrastre>(SIN_ARRASTRE)
   const filas = useRef<(HTMLElement | null)[]>([])
   const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const inicio = useRef({ y: 0, indice: -1, alzado: false })
+  const inicio = useRef({ y: 0, indice: -1, alzado: false, scroll: 0 })
   const contenedor = useRef<HTMLElement | null>(null)
+  // El ancestro que de verdad hace scroll (el cuerpo del modal), no la lista.
+  const marco = useRef<HTMLElement | null>(null)
+  const punteroY = useRef(0)
+  const animacion = useRef<number | null>(null)
+
+  /** El ancestro desplazable mas cercano, que es quien hay que mover. */
+  const buscarMarco = (desde: HTMLElement | null): HTMLElement | null => {
+    let el = desde?.parentElement ?? null
+    while (el) {
+      const overflow = getComputedStyle(el).overflowY
+      if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el
+      el = el.parentElement
+    }
+    return null
+  }
 
   const registrarFila = useCallback((i: number, el: HTMLElement | null) => {
     filas.current[i] = el
@@ -68,7 +87,14 @@ export function usarArrastre(
   const alPulsar = (e: React.PointerEvent, indice: number) => {
     // Solo el boton principal: un clic derecho no debe alzar nada.
     if (e.button !== 0) return
-    inicio.current = { y: e.clientY, indice, alzado: false }
+    marco.current = marco.current ?? buscarMarco(contenedor.current)
+    inicio.current = {
+      y: e.clientY,
+      indice,
+      alzado: false,
+      scroll: marco.current?.scrollTop ?? 0,
+    }
+    punteroY.current = e.clientY
     const destino = e.currentTarget as HTMLElement
 
     temporizador.current = setTimeout(() => {
@@ -80,9 +106,12 @@ export function usarArrastre(
   }
 
   const alMover = (e: React.PointerEvent) => {
-    const { y, indice, alzado } = inicio.current
+    const { y, indice, alzado, scroll } = inicio.current
     if (indice < 0) return
-    const delta = e.clientY - y
+    punteroY.current = e.clientY
+    // Lo que se ha desplazado la lista cuenta como movimiento del renglon.
+    const corrido = (marco.current?.scrollTop ?? 0) - scroll
+    const delta = e.clientY - y + corrido
 
     // Todavia no se alza: si el dedo se va, era scroll.
     if (!alzado) {
@@ -98,11 +127,13 @@ export function usarArrastre(
 
   const alSoltar = () => {
     cancelarEspera()
+    if (animacion.current) cancelAnimationFrame(animacion.current)
+    animacion.current = null
     const { indice, alzado } = inicio.current
     if (alzado && arrastre.destino != null && arrastre.destino !== indice) {
       onSoltar(indice, arrastre.destino)
     }
-    inicio.current = { y: 0, indice: -1, alzado: false }
+    inicio.current = { y: 0, indice: -1, alzado: false, scroll: 0 }
     setArrastre(SIN_ARRASTRE)
   }
 
@@ -114,6 +145,50 @@ export function usarArrastre(
     el.addEventListener('touchmove', bloquear, { passive: false })
     return () => el.removeEventListener('touchmove', bloquear)
   }, [arrastre.indice])
+
+  /**
+   * Al llegar a los bordes la lista se desplaza sola.
+   *
+   * Sin esto, mover un producto del puesto 60 al 3 es imposible: el dedo llega
+   * al borde de la pantalla y ahi se acaba el gesto.
+   */
+  useEffect(() => {
+    if (arrastre.indice == null) return
+    const el = marco.current
+    if (!el) return
+
+    const paso = () => {
+      const caja = el.getBoundingClientRect()
+      const desdeArriba = punteroY.current - caja.top
+      const desdeAbajo = caja.bottom - punteroY.current
+      let dy = 0
+
+      if (desdeArriba < BORDE_AUTOSCROLL_PX) {
+        dy = -VELOCIDAD_AUTOSCROLL * (1 - Math.max(0, desdeArriba) / BORDE_AUTOSCROLL_PX)
+      } else if (desdeAbajo < BORDE_AUTOSCROLL_PX) {
+        dy = VELOCIDAD_AUTOSCROLL * (1 - Math.max(0, desdeAbajo) / BORDE_AUTOSCROLL_PX)
+      }
+
+      if (dy !== 0) {
+        const antes = el.scrollTop
+        el.scrollTop += dy
+        // Al desplazarse la lista, el renglon alzado tiene que seguir al dedo.
+        if (el.scrollTop !== antes) {
+          const { y, indice, scroll } = inicio.current
+          const corrido = el.scrollTop - scroll
+          const nuevoDelta = punteroY.current - y + corrido
+          setArrastre({ indice, desplazamiento: nuevoDelta, destino: calcularDestino(indice, nuevoDelta) })
+        }
+      }
+      animacion.current = requestAnimationFrame(paso)
+    }
+
+    animacion.current = requestAnimationFrame(paso)
+    return () => {
+      if (animacion.current) cancelAnimationFrame(animacion.current)
+      animacion.current = null
+    }
+  }, [arrastre.indice, calcularDestino])
 
   useEffect(() => cancelarEspera, [])
 

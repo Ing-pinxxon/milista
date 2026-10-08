@@ -93,3 +93,52 @@ export function moverItem<T>(items: T[], desde: number, hasta: number): T[] {
   copia.splice(Math.max(0, Math.min(hasta, copia.length)), 0, movido)
   return copia
 }
+
+/**
+ * Lo que hace falta de un producto para saber donde va en el recorrido.
+ */
+export interface ProductoOrdenable {
+  id: string
+  orden: number
+  ordenCompra: number | null
+}
+
+/** Separa el orden del recorrido del de la hoja: lo no ordenado va despues de todo. */
+const SALTO_SIN_ORDENAR = 1_000_000
+
+/**
+ * El puesto de cada producto en el recorrido por la plaza.
+ *
+ * Lo que ya tiene un puesto asignado va primero, en ese puesto. Lo que nunca se
+ * ha ordenado va despues, en el orden de la hoja de calculo.
+ */
+export function construirRangos(productos: ProductoOrdenable[]): Map<string, number> {
+  const rangos = new Map<string, number>()
+  for (const p of productos) {
+    rangos.set(p.id, p.ordenCompra ?? SALTO_SIN_ORDENAR + p.orden)
+  }
+  return rangos
+}
+
+/** Las notas sueltas no tienen puesto en el recorrido: se quedan al final. */
+function rangoDe(productoId: string | null, rangos: Map<string, number>): number {
+  if (!productoId) return Number.POSITIVE_INFINITY
+  return rangos.get(productoId) ?? Number.POSITIVE_INFINITY
+}
+
+/**
+ * Mete un renglon nuevo en el puesto que le toca segun el recorrido.
+ *
+ * Sin esto, buscar un producto y seleccionarlo lo manda al final de la lista y
+ * toca arrastrarlo hasta su sitio, que es justo el tiempo que se queria ahorrar.
+ */
+export function insertarEnOrden<T extends { productoId: string | null }>(
+  items: T[],
+  nuevo: T,
+  rangos: Map<string, number>,
+): T[] {
+  const rango = rangoDe(nuevo.productoId, rangos)
+  const posicion = items.findIndex((it) => rangoDe(it.productoId, rangos) > rango)
+  if (posicion === -1) return [...items, nuevo]
+  return [...items.slice(0, posicion), nuevo, ...items.slice(posicion)]
+}

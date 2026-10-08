@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { estaListo, moverItem, ordenParaMostrar, sugerirCompras } from './compras'
+import {
+  construirRangos,
+  estaListo,
+  insertarEnOrden,
+  moverItem,
+  ordenParaMostrar,
+  sugerirCompras,
+} from './compras'
 import { costoNormalizado } from './tipos-compras'
 import type { ProductoConPrecio } from './consultas'
 
@@ -180,5 +187,67 @@ describe('moverItem', () => {
   it('no se sale del arreglo', () => {
     expect(moverItem(['a', 'b'], 0, 99)).toEqual(['b', 'a'])
     expect(moverItem(['a', 'b'], 5, 0)).toEqual(['a', 'b'])
+  })
+})
+
+describe('insertarEnOrden', () => {
+  // Recorrido: criolla primero, luego mora, luego habichuela.
+  const rangos = construirRangos([
+    { id: 'criolla', orden: 64, ordenCompra: 0 },
+    { id: 'mora', orden: 16, ordenCompra: 1 },
+    { id: 'habichuela', orden: 54, ordenCompra: 2 },
+    { id: 'nunca-comprado', orden: 5, ordenCompra: null },
+  ])
+
+  const it_ = (productoId: string | null) => ({ productoId })
+
+  it('mete el producto en su puesto del recorrido, no al final', () => {
+    // Es el motivo de todo esto: seleccionarlo ya no obliga a arrastrarlo.
+    const items = [it_('criolla'), it_('habichuela')]
+    expect(insertarEnOrden(items, it_('mora'), rangos).map((x) => x.productoId)).toEqual([
+      'criolla',
+      'mora',
+      'habichuela',
+    ])
+  })
+
+  it('al principio si es lo primero del recorrido', () => {
+    const items = [it_('mora'), it_('habichuela')]
+    expect(insertarEnOrden(items, it_('criolla'), rangos)[0].productoId).toBe('criolla')
+  })
+
+  it('al final si es lo ultimo', () => {
+    const items = [it_('criolla'), it_('mora')]
+    const r = insertarEnOrden(items, it_('habichuela'), rangos)
+    expect(r[r.length - 1].productoId).toBe('habichuela')
+  })
+
+  it('lo que nunca se ha ordenado va despues de lo que si', () => {
+    const items = [it_('criolla')]
+    expect(insertarEnOrden(items, it_('nunca-comprado'), rangos).map((x) => x.productoId)).toEqual([
+      'criolla',
+      'nunca-comprado',
+    ])
+  })
+
+  it('las notas sueltas se quedan al final y no estorban', () => {
+    const items = [it_('criolla'), it_(null)]
+    expect(insertarEnOrden(items, it_('mora'), rangos).map((x) => x.productoId)).toEqual([
+      'criolla',
+      'mora',
+      null,
+    ])
+  })
+
+  it('una nota nueva se agrega al final', () => {
+    const items = [it_('criolla')]
+    expect(insertarEnOrden(items, it_(null), rangos).map((x) => x.productoId)).toEqual([
+      'criolla',
+      null,
+    ])
+  })
+
+  it('en una lista vacia simplemente entra', () => {
+    expect(insertarEnOrden([], it_('mora'), rangos)).toHaveLength(1)
   })
 })
