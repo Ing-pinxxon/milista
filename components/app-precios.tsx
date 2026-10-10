@@ -9,7 +9,9 @@ import { ModalLista } from './modal-lista'
 import { ModalNuevo } from './modal-nuevo'
 import { PedirClave } from './pedir-clave'
 import { normalizar } from '@/lib/normalizar'
+import { crearGuardadorDeRecorrido } from '@/lib/guardar-recorrido'
 import { guardarCatalogo, leerCatalogo } from '@/lib/offline'
+import { rangosDe, rutaDe } from '@/lib/recorrido'
 import type { Ganancia } from '@/lib/precios'
 import type { ProductoConPrecio } from '@/lib/tipos'
 
@@ -31,8 +33,6 @@ export function AppPrecios({
   // El editor del recorrido se monta ENCIMA de la lista, sin desmontarla: si no,
   // se perderia la lista que se esta armando y que todavia no se ha guardado.
   const [ordenAbierto, setOrdenAbierto] = useState(false)
-  // Sube al guardar el recorrido, para que la lista en curso se reacomode.
-  const [versionOrden, setVersionOrden] = useState(0)
   const [aviso, setAviso] = useState<string | null>(null)
   const [sinConexion, setSinConexion] = useState(false)
   const caja = useRef<HTMLInputElement>(null)
@@ -54,22 +54,65 @@ export function AppPrecios({
     }
   }, [])
 
+  const flash = (m: string) => {
+    setAviso(m)
+    setTimeout(() => setAviso(null), 2500)
+  }
+
+  // ---------------------------------------------------------------- recorrido
+  // El orden de la plaza es UNO solo y vive aqui. La lista de compras y el editor
+  // lo leen de aqui y lo cambian por aqui; nada mas lo toca.
+  const ruta = useMemo(() => rutaDe(productos), [productos])
+
+  const guardador = useRef<ReturnType<typeof crearGuardadorDeRecorrido> | null>(null)
+  if (!guardador.current) {
+    guardador.current = crearGuardadorDeRecorrido(() =>
+      flash('No se pudo guardar el orden. Reintentando…'),
+    )
+  }
+
+  /** Pone cada producto en su puesto del recorrido. */
+  const conRuta = (ps: ProductoConPrecio[], r: string[]) => {
+    const puestos = rangosDe(r)
+    return ps.map((p) => ({ ...p, ordenCompra: puestos.get(p.id) ?? null }))
+  }
+
+  /** Se ve al instante y se guarda en cuanto se deje de mover. */
+  const cambiarRecorrido = (nueva: string[]) => {
+    const actualizados = conRuta(productos, nueva)
+    setProductos(actualizados)
+    guardarCatalogo(actualizados)
+    guardador.current?.programar(nueva)
+  }
+
+  // Lo pendiente se manda ya si se esconde o se cierra la app.
+  useEffect(() => {
+    const mandar = () => guardador.current?.ahora()
+    const alEsconder = () => document.visibilityState === 'hidden' && mandar()
+    window.addEventListener('pagehide', mandar)
+    document.addEventListener('visibilitychange', alEsconder)
+    return () => {
+      window.removeEventListener('pagehide', mandar)
+      document.removeEventListener('visibilitychange', alEsconder)
+    }
+  }, [])
+
   const refrescar = async () => {
     try {
       const r = await fetch('/api/productos', { cache: 'no-store' })
       if (!r.ok) throw new Error('sin respuesta')
-      const { productos: frescos } = await r.json()
-      setProductos(frescos)
-      guardarCatalogo(frescos)
+      const { productos: frescos } = (await r.json()) as { productos: ProductoConPrecio[] }
+      // Si hay un orden que todavia no llega al servidor, el catalogo recien
+      // traido lo tiene viejo: se le vuelve a poner encima para que la lista no
+      // se devuelva sola.
+      const sinGuardar = guardador.current?.sinGuardar()
+      const finales = sinGuardar ? conRuta(frescos, sinGuardar) : frescos
+      setProductos(finales)
+      guardarCatalogo(finales)
     } catch {
       const guardado = await leerCatalogo()
       if (guardado?.length) setProductos(guardado)
     }
-  }
-
-  const flash = (m: string) => {
-    setAviso(m)
-    setTimeout(() => setAviso(null), 2500)
   }
 
   const editar = async (id: string, costo: number | null, venta: number | null) => {
@@ -270,8 +313,9 @@ export function AppPrecios({
             if (huboCambios) refrescar()
           }}
           onPedirClave={() => setModo('clave')}
+          ruta={ruta}
+          onCambiarRecorrido={cambiarRecorrido}
           onEditarOrden={() => setOrdenAbierto(true)}
-          versionOrden={versionOrden}
           onAplicado={(n) => {
             setModo(null)
             flash(n === 0 ? 'Lista cerrada' : `${n} precio${n === 1 ? '' : 's'} actualizado${n === 1 ? '' : 's'}`)
@@ -283,15 +327,9 @@ export function AppPrecios({
       {ordenAbierto && (
         <ModalOrden
           productos={productos}
-          onPedirClave={() => setModo('clave')}
-          onCerrar={async (huboCambios) => {
-            setOrdenAbierto(false)
-            if (huboCambios) {
-              flash('Orden guardado')
-              await refrescar()
-              setVersionOrden((v) => v + 1)
-            }
-          }}
+          ruta={ruta}
+          onCambiarRecorrido={cambiarRecorrido}
+          onCerrar={() => setOrdenAbierto(false)}
         />
       )}
 

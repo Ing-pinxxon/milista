@@ -2,32 +2,34 @@ import { puedeEscribir, respuestaSinAcceso } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export const dynamic = 'force-dynamic'
-export const maxDuration = 60
 
 /**
- * Fija el orden del recorrido por la plaza.
+ * Guarda el recorrido de la plaza: llegan los ids en orden y cada uno queda en
+ * su puesto, 0, 1, 2... sin repetidos.
  *
- * Llegan los ids en el orden en que se recorre, y cada uno se queda con su
- * puesto. Lo que no venga en la lista pierde su puesto y vuelve a ordenarse por
- * la hoja de calculo, que es lo que se espera al sacar algo del recorrido.
+ * Es una sola instruccion en vez de una por producto: con 112 productos eran 112
+ * viajes a la base en cada arrastre.
  */
 export async function PUT(req: Request) {
   if (!puedeEscribir()) return respuestaSinAcceso()
 
-  const { ids } = (await req.json()) as { ids?: string[] }
-  if (!Array.isArray(ids)) return Response.json({ error: 'Faltan los ids.' }, { status: 400 })
+  const { ids } = (await req.json().catch(() => ({}))) as { ids?: unknown }
+  if (!Array.isArray(ids) || !ids.every((x) => typeof x === 'string')) {
+    return Response.json({ error: 'Faltan los ids.' }, { status: 400 })
+  }
 
   // Sin repetidos: dos puestos para el mismo producto no significan nada.
-  const unicos = [...new Set(ids)]
+  const unicos = [...new Set(ids as string[])]
 
   await prisma.$transaction([
-    prisma.producto.updateMany({
-      where: { id: { notIn: unicos } },
-      data: { ordenCompra: null },
-    }),
-    ...unicos.map((id, puesto) =>
-      prisma.producto.update({ where: { id }, data: { ordenCompra: puesto } }),
-    ),
+    // Lo que no viene pierde su puesto y vuelve a ordenarse por la hoja.
+    prisma.$executeRaw`
+      UPDATE "Producto" SET "ordenCompra" = NULL
+      WHERE NOT (id = ANY(${unicos}::text[]))`,
+    prisma.$executeRaw`
+      UPDATE "Producto" AS p SET "ordenCompra" = (v.puesto - 1)::int
+      FROM unnest(${unicos}::text[]) WITH ORDINALITY AS v(id, puesto)
+      WHERE p.id = v.id`,
   ])
 
   return Response.json({ ok: true, ordenados: unicos.length })

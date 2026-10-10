@@ -1,17 +1,11 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Modal } from './modal'
 import { normalizar } from '@/lib/normalizar'
 import { calcularVenta, cop } from '@/lib/precios'
-import {
-  construirRangos,
-  estaListo,
-  insertarEnOrden,
-  moverItem,
-  ordenParaMostrar,
-  sugerirCompras,
-} from '@/lib/compras'
+import { sugerirCompras } from '@/lib/compras'
+import { moverEnRuta, ordenDeLista, rangosDe, renglonListo } from '@/lib/recorrido'
 import { usarArrastre } from '@/lib/usar-arrastre'
 import { gananciaDe } from '@/lib/parser'
 import {
@@ -31,10 +25,12 @@ interface Props {
   onCerrar: (huboCambios: boolean) => void
   onAplicado: (cantidad: number) => void
   onPedirClave: () => void
-  /** Abre el editor del orden fijo del recorrido. */
+  /** El orden de la plaza: la lista siempre se muestra en este orden. */
+  ruta: string[]
+  /** Arrastrar un renglon cambia el recorrido, que es el unico orden. */
+  onCambiarRecorrido: (ruta: string[]) => void
+  /** Abre el editor del recorrido completo. */
   onEditarOrden: () => void
-  /** Sube cuando se guarda un recorrido nuevo. */
-  versionOrden: number
 }
 
 export function ModalCompras({
@@ -42,8 +38,9 @@ export function ModalCompras({
   onCerrar,
   onAplicado,
   onPedirClave,
+  ruta,
+  onCambiarRecorrido,
   onEditarOrden,
-  versionOrden,
 }: Props) {
   const [paso, setPaso] = useState<Paso>('cargando')
   const [lista, setLista] = useState<ListaVista | null>(null)
@@ -112,24 +109,22 @@ export function ModalCompras({
       .slice(0, 6)
   }, [busqueda, productos, enLista])
 
-  const rangos = useMemo(() => construirRangos(productos), [productos])
+  const rangos = useMemo(() => rangosDe(ruta), [ruta])
 
   const agregarProducto = (p: ProductoConPrecio) => {
-    // En su puesto del recorrido, no al final: si no, tocaria arrastrarlo.
-    setItems((xs) =>
-      insertarEnOrden(
-        xs,
-        {
-          productoId: p.id,
-          texto: null,
-          comprado: false,
-          costo: null,
-          unidad: p.unidad,
-          producto: { id: p.id, nombre: p.nombre, slug: p.slug, unidad: p.unidad },
-        },
-        rangos,
-      ),
-    )
+    // No hace falta acomodarlo: la lista se muestra en el orden del recorrido,
+    // asi que aparece directamente en su puesto.
+    setItems((xs) => [
+      ...xs,
+      {
+        productoId: p.id,
+        texto: null,
+        comprado: false,
+        costo: null,
+        unidad: p.unidad,
+        producto: { id: p.id, nombre: p.nombre, slug: p.slug, unidad: p.unidad },
+      },
+    ])
     setBusqueda('')
   }
 
@@ -145,37 +140,31 @@ export function ModalCompras({
 
   const quitar = (i: number) => setItems((xs) => xs.filter((_, j) => j !== i))
 
-  // Lo resuelto baja al final; el orden del recorrido se conserva por debajo.
-  const visibles = useMemo(() => ordenParaMostrar(items), [items])
+  // El orden en pantalla SALE del recorrido: no se guarda aparte en la lista.
+  // Comprando, lo resuelto baja al final.
+  const orden = useMemo(
+    () => ordenDeLista(items, rangos, paso === 'comprar'),
+    [items, rangos, paso],
+  )
 
-  /** El arrastre trabaja sobre lo que se ve; se traduce al orden real. */
-  const reordenar = (desdeVista: number, hastaVista: number) => {
-    const desde = visibles[desdeVista]
-    const hasta = visibles[hastaVista]
-    if (desde == null || hasta == null) return
-    setItems((xs) => moverItem(xs, desde, hasta))
+  /**
+   * Arrastrar un renglon mueve ese producto en el recorrido, y solo a el. Como la
+   * lista se muestra en el orden del recorrido, queda donde se solto, y la
+   * proxima lista ya sale asi.
+   */
+  const soltar = (desde: number, hasta: number) => {
+    const vista = orden.indices
+      .slice(0, orden.arrastrables)
+      .map((i) => items[i].productoId as string)
+    onCambiarRecorrido(moverEnRuta(ruta, vista, desde, hasta))
     navigator.vibrate?.(10)
   }
 
-  // Al guardar un recorrido nuevo, la lista que se esta armando se reacomoda:
-  // es justo lo que se acaba de pedir al editarlo.
-  const primeraVez = useRef(true)
-  useEffect(() => {
-    if (primeraVez.current) {
-      primeraVez.current = false
-      return
-    }
-    setItems((xs) =>
-      [...xs].sort(
-        (a, b) =>
-          (a.productoId ? (rangos.get(a.productoId) ?? Infinity) : Infinity) -
-          (b.productoId ? (rangos.get(b.productoId) ?? Infinity) : Infinity),
-      ),
-    )
-  }, [versionOrden, rangos])
-
-  const arrastreArmar = usarArrastre(items.length, reordenar)
-  const arrastreComprar = usarArrastre(items.length, reordenar)
+  const arrastre = usarArrastre({
+    cantidad: orden.indices.length,
+    arrastrables: orden.arrastrables,
+    onSoltar: soltar,
+  })
 
   const cambiar = (i: number, cambio: Partial<ItemListaVista>) =>
     setItems((xs) => xs.map((x, j) => (j === i ? { ...x, ...cambio } : x)))
@@ -185,9 +174,10 @@ export function ModalCompras({
     setOcupado(true)
     setError(null)
     try {
+      const enOrden = orden.indices.map((i) => items[i])
       const cuerpo = JSON.stringify({
         estado,
-        items: items.map((i) => ({
+        items: enOrden.map((i) => ({
           productoId: i.productoId,
           texto: i.texto,
           comprado: i.comprado,
@@ -205,7 +195,7 @@ export function ModalCompras({
         : await fetch('/api/listas', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ items: items.map((i) => ({ productoId: i.productoId, texto: i.texto })) }),
+            body: JSON.stringify({ items: enOrden.map((i) => ({ productoId: i.productoId, texto: i.texto })) }),
           })
 
       if (r.status === 401) return onPedirClave()
@@ -344,46 +334,42 @@ export function ModalCompras({
             </button>
           </div>
 
+          {/* Siempre a la vista, aunque la lista este vacia: antes solo aparecia
+              con renglones y no habia como entrar a acomodar el recorrido. */}
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-600">
+              {orden.arrastrables > 1 ? 'Mantén pulsado para mover' : 'En el orden de la plaza'}
+            </p>
+            <button
+              onClick={onEditarOrden}
+              className="min-h-[36px] shrink-0 font-mono text-[11px] uppercase tracking-wider text-amber-500 underline underline-offset-2"
+            >
+              Editar orden
+            </button>
+          </div>
+
           {items.length === 0 ? (
             <p className="rounded-xl border border-neutral-800 px-3 py-6 text-center text-sm text-neutral-500">
               La lista está vacía.
             </p>
           ) : (
-            <div ref={arrastreArmar.refContenedor as React.RefObject<HTMLDivElement>} className="space-y-1.5">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-neutral-600">
-                  Mantén pulsado un renglón para moverlo
-                </p>
-                <button
-                  onClick={onEditarOrden}
-                  className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-amber-500 underline underline-offset-2"
-                >
-                  Editar orden
-                </button>
-              </div>
-              {visibles.map((real, vista) => {
+            <div ref={arrastre.refContenedor} className="space-y-1.5">
+              {orden.indices.map((real, vista) => {
                 const it = items[real]
-                const alzado = arrastreArmar.arrastre.indice === vista
+                const alzado = arrastre.alzado === vista
+                const movible = vista < orden.arrastrables
                 return (
                   <div
                     key={it.id ?? `${it.productoId ?? it.texto}-${real}`}
-                    ref={(el) => arrastreArmar.registrarFila(vista, el)}
-                    {...arrastreArmar.manejadores(vista)}
-                    style={{
-                      transform: `translateY(${
-                        alzado ? arrastreArmar.arrastre.desplazamiento : arrastreArmar.desplazamientoDe(vista)
-                      }px)`,
-                      transition: alzado ? 'none' : 'transform 160ms ease',
-                      touchAction: arrastreArmar.arrastre.indice != null ? 'none' : 'manipulation',
-                    }}
+                    {...arrastre.propsDe(vista)}
                     className={`flex select-none items-center justify-between gap-2 rounded-xl border px-3 py-3 ${
                       alzado
-                        ? 'relative z-10 scale-[1.02] border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
+                        ? 'border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
                         : 'border-neutral-800 bg-neutral-950'
                     }`}
                   >
                     <span className="truncate">
-                      <span className="mr-2 font-mono text-neutral-600">⠿</span>
+                      {movible && <span className="mr-2 font-mono text-neutral-600">⠿</span>}
                       {nombreDeItem(it)}
                       {!it.productoId && (
                         <span className="ml-2 font-mono text-[10px] uppercase tracking-wider text-neutral-600">
@@ -441,30 +427,23 @@ export function ModalCompras({
         <div className="p-4">
           <p className="mb-3 text-sm text-neutral-400">
             Toca cada cosa al comprarla y anota a cómo salió. Lo que ya quedó con precio se
-            baja al final. Mantén pulsado un renglón para moverlo de sitio.
+            baja al final. Para cambiar algo de puesto, mantenlo pulsado y arrástralo: el
+            cambio queda para las próximas listas.
           </p>
 
-          <div ref={arrastreComprar.refContenedor as React.RefObject<HTMLDivElement>} className="space-y-2">
-            {visibles.map((real, vista) => {
+          <div ref={arrastre.refContenedor} className="space-y-2">
+            {orden.indices.map((real, vista) => {
               const it = items[real]
               const i = real
-              const alzado = arrastreComprar.arrastre.indice === vista
-              const listo = estaListo(it)
+              const alzado = arrastre.alzado === vista
+              const listo = renglonListo(it)
               return (
               <div
-                key={it.id ?? real}
-                ref={(el) => arrastreComprar.registrarFila(vista, el)}
-                {...arrastreComprar.manejadores(vista)}
-                style={{
-                  transform: `translateY(${
-                    alzado ? arrastreComprar.arrastre.desplazamiento : arrastreComprar.desplazamientoDe(vista)
-                  }px)`,
-                  transition: alzado ? 'none' : 'transform 200ms ease',
-                  touchAction: arrastreComprar.arrastre.indice != null ? 'none' : 'manipulation',
-                }}
+                key={it.id ?? `${it.productoId ?? it.texto}-${real}`}
+                {...arrastre.propsDe(vista)}
                 className={`select-none rounded-xl border p-3 ${
                   alzado
-                    ? 'relative z-10 scale-[1.02] border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
+                    ? 'border-amber-400 bg-neutral-800 shadow-lg shadow-black/50'
                     : listo
                       ? 'border-neutral-900 bg-neutral-900/40 opacity-60'
                       : it.comprado

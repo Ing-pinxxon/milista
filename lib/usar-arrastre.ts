@@ -1,219 +1,314 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { destinoPorCentros } from './recorrido'
 
 /** Cuanto hay que mantener el dedo para que el recuadro se alce. */
 const MS_PARA_ALZAR = 220
 /** Si el dedo se mueve mas que esto antes de alzarse, era scroll y se cancela. */
 const TOLERANCIA_PX = 8
-/** Franja en los bordes donde la lista empieza a desplazarse sola. */
-const BORDE_AUTOSCROLL_PX = 72
-/** Pixeles por fotograma al desplazarse sola, en el borde mismo. */
-const VELOCIDAD_AUTOSCROLL = 12
+/**
+ * Franja en los bordes donde la lista se desplaza sola. Era de 72 px y con el
+ * dedo quieto cerca del borde seguia desplazando: el renglon se pasaba cinco o
+ * seis puestos de donde se queria soltar.
+ */
+const BORDE_AUTOSCROLL_PX = 44
+/** Pixeles por fotograma en el borde mismo; menos hacia adentro de la franja. */
+const VELOCIDAD_AUTOSCROLL = 9
 
-export interface Arrastre {
-  /** Indice del renglon alzado, o null. */
-  indice: number | null
-  /** Cuanto se ha desplazado en pixeles. */
-  desplazamiento: number
-  /** Donde caeria si se soltara ahora. */
-  destino: number | null
+interface Medidas {
+  /** Centro de cada renglon, en coordenadas del contenido (no de la pantalla). */
+  centros: number[]
+  /** Cuanto ocupa el renglon alzado contando el espacio hasta el siguiente. */
+  hueco: number
 }
 
-const SIN_ARRASTRE: Arrastre = { indice: null, desplazamiento: 0, destino: null }
+interface Gesto {
+  indice: number
+  alzado: boolean
+  /** Si el dedo se ha movido desde que se alzo: sin esto el autoscroll arranca solo. */
+  movido: boolean
+  x0: number
+  y0: number
+  scroll0: number
+  medidas: Medidas | null
+  destino: number
+}
+
+const SIN_GESTO: Gesto = {
+  indice: -1,
+  alzado: false,
+  movido: false,
+  x0: 0,
+  y0: 0,
+  scroll0: 0,
+  medidas: null,
+  destino: -1,
+}
+
+interface Vista {
+  indice: number | null
+  desplazamiento: number
+  destino: number | null
+  hueco: number
+}
+
+const SIN_VISTA: Vista = { indice: null, desplazamiento: 0, destino: null, hueco: 0 }
+
+/** El ancestro desplazable mas cercano: es quien hay que mover en el autoscroll. */
+function buscarMarco(desde: HTMLElement | null): HTMLElement | null {
+  let el = desde?.parentElement ?? null
+  while (el) {
+    const overflow = getComputedStyle(el).overflowY
+    if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el
+    el = el.parentElement
+  }
+  return null
+}
 
 /**
- * Reordenar renglones manteniendolos presionados y arrastrandolos.
+ * Reordenar renglones manteniendolos pulsados y arrastrandolos.
  *
- * Se mantiene pulsado, el recuadro se alza, y se arrastra hasta donde va. Se usa
- * Pointer Events para que funcione igual con el dedo y con el raton, y mientras
- * se arrastra se bloquea el scroll de la lista con un listener no pasivo: si no,
- * el navegador se lleva el gesto y la pagina se desplaza en vez del renglon.
+ * Solo se arrastran los `arrastrables` primeros renglones, y el destino nunca
+ * sale de ellos: en la lista de compras lo de abajo (lo ya comprado, las notas)
+ * no tiene puesto en el recorrido, y soltar algo ahi lo hacia rebotar.
  */
-export function usarArrastre(
-  cantidad: number,
-  onSoltar: (desde: number, hasta: number) => void,
-) {
-  const [arrastre, setArrastre] = useState<Arrastre>(SIN_ARRASTRE)
+export function usarArrastre({
+  cantidad,
+  arrastrables,
+  onSoltar,
+}: {
+  cantidad: number
+  arrastrables: number
+  onSoltar: (desde: number, hasta: number) => void
+}) {
+  const [vista, setVista] = useState<Vista>(SIN_VISTA)
+  // Un fotograma sin transiciones al soltar: si no, los renglones que estaban
+  // corridos se animan desde la posicion vieja y parece que saltan otros.
+  const [soltando, setSoltando] = useState(false)
+
   const filas = useRef<(HTMLElement | null)[]>([])
-  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const inicio = useRef({ y: 0, indice: -1, alzado: false, scroll: 0 })
+  const gesto = useRef<Gesto>(SIN_GESTO)
   const contenedor = useRef<HTMLElement | null>(null)
-  // El ancestro que de verdad hace scroll (el cuerpo del modal), no la lista.
   const marco = useRef<HTMLElement | null>(null)
   const punteroY = useRef(0)
+  const temporizador = useRef<ReturnType<typeof setTimeout> | null>(null)
   const animacion = useRef<number | null>(null)
+  const suprimirClick = useRef(false)
 
-  /** El ancestro desplazable mas cercano, que es quien hay que mover. */
-  const buscarMarco = (desde: HTMLElement | null): HTMLElement | null => {
-    let el = desde?.parentElement ?? null
-    while (el) {
-      const overflow = getComputedStyle(el).overflowY
-      if ((overflow === 'auto' || overflow === 'scroll') && el.scrollHeight > el.clientHeight) return el
-      el = el.parentElement
-    }
-    return null
-  }
-
-  const registrarFila = useCallback((i: number, el: HTMLElement | null) => {
-    filas.current[i] = el
-  }, [])
+  // Lo ultimo de las props, para que los manejadores nunca usen valores viejos.
+  const actual = useRef({ cantidad, arrastrables, onSoltar })
+  actual.current = { cantidad, arrastrables, onSoltar }
 
   const cancelarEspera = () => {
     if (temporizador.current) clearTimeout(temporizador.current)
     temporizador.current = null
   }
 
-  /** A que indice corresponde el desplazamiento actual. */
-  const calcularDestino = useCallback((desde: number, delta: number): number => {
-    const alturas = filas.current.map((el) => el?.getBoundingClientRect().height ?? 0)
-    let destino = desde
-    let acumulado = 0
+  const pararAutoscroll = () => {
+    if (animacion.current) cancelAnimationFrame(animacion.current)
+    animacion.current = null
+  }
 
-    if (delta > 0) {
-      for (let i = desde + 1; i < cantidad; i++) {
-        acumulado += alturas[i] ?? 0
-        if (delta > acumulado - (alturas[i] ?? 0) / 2) destino = i
-      }
-    } else {
-      for (let i = desde - 1; i >= 0; i--) {
-        acumulado += alturas[i] ?? 0
-        if (-delta > acumulado - (alturas[i] ?? 0) / 2) destino = i
-      }
+  /** Mide donde esta cada renglon, en coordenadas del contenido. */
+  const medir = (indice: number): Medidas => {
+    const m = marco.current
+    const base = m ? m.getBoundingClientRect().top - m.scrollTop : 0
+    const cajas = Array.from({ length: actual.current.cantidad }, (_, i) => {
+      const r = filas.current[i]?.getBoundingClientRect()
+      return r ? { top: r.top - base, alto: r.height } : { top: 0, alto: 0 }
+    })
+    const espacio =
+      cajas.length > 1 ? Math.max(0, cajas[1].top - (cajas[0].top + cajas[0].alto)) : 0
+    return {
+      centros: cajas.map((c) => c.top + c.alto / 2),
+      hueco: cajas[indice].alto + espacio,
     }
-    return destino
-  }, [cantidad])
+  }
+
+  /** Recalcula desplazamiento y destino con el dedo y el scroll actuales. */
+  const actualizar = () => {
+    const g = gesto.current
+    if (!g.alzado || !g.medidas) return
+    const corrido = (marco.current?.scrollTop ?? 0) - g.scroll0
+    const delta = punteroY.current - g.y0 + corrido
+    const destino = destinoPorCentros(
+      g.medidas.centros,
+      g.indice,
+      g.medidas.centros[g.indice] + delta,
+      actual.current.arrastrables,
+    )
+    g.destino = destino
+    setVista({ indice: g.indice, desplazamiento: delta, destino, hueco: g.medidas.hueco })
+  }
+
+  const terminar = (aplicar: boolean) => {
+    cancelarEspera()
+    pararAutoscroll()
+    const g = gesto.current
+    gesto.current = SIN_GESTO
+    if (g.alzado) {
+      // El navegador puede mandar un clic al soltar: no debe chulear ni quitar nada.
+      suprimirClick.current = true
+      setTimeout(() => (suprimirClick.current = false), 400)
+      if (aplicar && g.destino >= 0 && g.destino !== g.indice) {
+        actual.current.onSoltar(g.indice, g.destino)
+      }
+      setSoltando(true)
+      requestAnimationFrame(() => requestAnimationFrame(() => setSoltando(false)))
+    }
+    setVista(SIN_VISTA)
+  }
 
   const alPulsar = (e: React.PointerEvent, indice: number) => {
-    // Solo el boton principal: un clic derecho no debe alzar nada.
-    if (e.button !== 0) return
-    marco.current = marco.current ?? buscarMarco(contenedor.current)
-    inicio.current = {
-      y: e.clientY,
-      indice,
-      alzado: false,
-      scroll: marco.current?.scrollTop ?? 0,
-    }
-    punteroY.current = e.clientY
-    const destino = e.currentTarget as HTMLElement
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    if (indice >= actual.current.arrastrables) return
+    // Escribir el precio no debe alzar el renglon.
+    if ((e.target as HTMLElement).closest('input, textarea, select, [data-sin-arrastre]')) return
 
+    const elemento = e.currentTarget as HTMLElement
+    const pointerId = e.pointerId
+    gesto.current = { ...SIN_GESTO, indice, x0: e.clientX, y0: e.clientY }
+    punteroY.current = e.clientY
+
+    cancelarEspera()
     temporizador.current = setTimeout(() => {
-      inicio.current.alzado = true
-      destino.setPointerCapture?.(e.pointerId)
+      const g = gesto.current
+      if (g.indice !== indice) return
+      marco.current = buscarMarco(contenedor.current)
+      // Se mide ANTES de cambiar nada en pantalla.
+      g.medidas = medir(indice)
+      g.alzado = true
+      g.y0 = punteroY.current
+      g.scroll0 = marco.current?.scrollTop ?? 0
+      g.destino = indice
+      try {
+        elemento.setPointerCapture(pointerId)
+      } catch {
+        // Si el puntero ya no existe, el gesto termina con el siguiente evento.
+      }
       navigator.vibrate?.(10)
-      setArrastre({ indice, desplazamiento: 0, destino: indice })
+      setVista({ indice, desplazamiento: 0, destino: indice, hueco: g.medidas.hueco })
     }, MS_PARA_ALZAR)
   }
 
   const alMover = (e: React.PointerEvent) => {
-    const { y, indice, alzado, scroll } = inicio.current
-    if (indice < 0) return
+    const g = gesto.current
+    if (g.indice < 0) return
     punteroY.current = e.clientY
-    // Lo que se ha desplazado la lista cuenta como movimiento del renglon.
-    const corrido = (marco.current?.scrollTop ?? 0) - scroll
-    const delta = e.clientY - y + corrido
-
-    // Todavia no se alza: si el dedo se va, era scroll.
-    if (!alzado) {
-      if (Math.abs(delta) > TOLERANCIA_PX) {
+    if (!g.alzado) {
+      // Todavia no se alza: si el dedo se va, era scroll.
+      if (Math.abs(e.clientY - g.y0) > TOLERANCIA_PX || Math.abs(e.clientX - g.x0) > TOLERANCIA_PX) {
         cancelarEspera()
-        inicio.current.indice = -1
+        gesto.current = SIN_GESTO
       }
       return
     }
-
-    setArrastre({ indice, desplazamiento: delta, destino: calcularDestino(indice, delta) })
+    g.movido = true
+    actualizar()
   }
 
-  const alSoltar = () => {
-    cancelarEspera()
-    if (animacion.current) cancelAnimationFrame(animacion.current)
-    animacion.current = null
-    const { indice, alzado } = inicio.current
-    if (alzado && arrastre.destino != null && arrastre.destino !== indice) {
-      onSoltar(indice, arrastre.destino)
-    }
-    inicio.current = { y: 0, indice: -1, alzado: false, scroll: 0 }
-    setArrastre(SIN_ARRASTRE)
-  }
+  // Mientras hay un renglon alzado, el navegador no debe desplazar la lista.
+  // Va conectado desde el principio y no al alzar: conectado tarde, el navegador
+  // alcanzaba a quedarse con el gesto, cancelaba el arrastre y el renglon caia
+  // a medio camino.
+  const bloquear = useCallback((e: TouchEvent) => {
+    if (gesto.current.alzado) e.preventDefault()
+  }, [])
 
-  // Mientras se arrastra, el navegador no debe desplazar la lista.
+  const refContenedor = useCallback(
+    (el: HTMLElement | null) => {
+      contenedor.current?.removeEventListener('touchmove', bloquear)
+      contenedor.current = el
+      el?.addEventListener('touchmove', bloquear, { passive: false })
+    },
+    [bloquear],
+  )
+
+  /** Al llegar al borde la lista se desplaza sola, mas despacio hacia adentro. */
   useEffect(() => {
-    const el = contenedor.current
-    if (!el || arrastre.indice == null) return
-    const bloquear = (e: TouchEvent) => e.preventDefault()
-    el.addEventListener('touchmove', bloquear, { passive: false })
-    return () => el.removeEventListener('touchmove', bloquear)
-  }, [arrastre.indice])
-
-  /**
-   * Al llegar a los bordes la lista se desplaza sola.
-   *
-   * Sin esto, mover un producto del puesto 60 al 3 es imposible: el dedo llega
-   * al borde de la pantalla y ahi se acaba el gesto.
-   */
-  useEffect(() => {
-    if (arrastre.indice == null) return
-    const el = marco.current
-    if (!el) return
-
+    if (vista.indice == null) return
     const paso = () => {
-      const caja = el.getBoundingClientRect()
-      const desdeArriba = punteroY.current - caja.top
-      const desdeAbajo = caja.bottom - punteroY.current
-      let dy = 0
-
-      if (desdeArriba < BORDE_AUTOSCROLL_PX) {
-        dy = -VELOCIDAD_AUTOSCROLL * (1 - Math.max(0, desdeArriba) / BORDE_AUTOSCROLL_PX)
-      } else if (desdeAbajo < BORDE_AUTOSCROLL_PX) {
-        dy = VELOCIDAD_AUTOSCROLL * (1 - Math.max(0, desdeAbajo) / BORDE_AUTOSCROLL_PX)
-      }
-
-      if (dy !== 0) {
-        const antes = el.scrollTop
-        el.scrollTop += dy
-        // Al desplazarse la lista, el renglon alzado tiene que seguir al dedo.
-        if (el.scrollTop !== antes) {
-          const { y, indice, scroll } = inicio.current
-          const corrido = el.scrollTop - scroll
-          const nuevoDelta = punteroY.current - y + corrido
-          setArrastre({ indice, desplazamiento: nuevoDelta, destino: calcularDestino(indice, nuevoDelta) })
+      const el = marco.current
+      const g = gesto.current
+      if (el && g.alzado && g.movido) {
+        const caja = el.getBoundingClientRect()
+        const y = punteroY.current
+        const arriba = (caja.top + BORDE_AUTOSCROLL_PX - y) / BORDE_AUTOSCROLL_PX
+        const abajo = (y - (caja.bottom - BORDE_AUTOSCROLL_PX)) / BORDE_AUTOSCROLL_PX
+        const fuerza = Math.min(1, Math.max(arriba, abajo))
+        if (fuerza > 0) {
+          const dy = Math.max(1, VELOCIDAD_AUTOSCROLL * fuerza * fuerza) * (arriba > 0 ? -1 : 1)
+          const antes = el.scrollTop
+          el.scrollTop += dy
+          if (el.scrollTop !== antes) actualizar()
         }
       }
       animacion.current = requestAnimationFrame(paso)
     }
-
     animacion.current = requestAnimationFrame(paso)
-    return () => {
-      if (animacion.current) cancelAnimationFrame(animacion.current)
-      animacion.current = null
-    }
-  }, [arrastre.indice, calcularDestino])
+    return pararAutoscroll
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vista.indice])
 
-  useEffect(() => cancelarEspera, [])
+  useEffect(
+    () => () => {
+      cancelarEspera()
+      pararAutoscroll()
+      contenedor.current?.removeEventListener('touchmove', bloquear)
+    },
+    [bloquear],
+  )
 
-  /**
-   * Cuanto hay que correr un renglon para dejarle sitio al que se arrastra.
-   */
+  /** Cuanto se corre un renglon para dejarle sitio al que se arrastra. */
   const desplazamientoDe = (i: number): number => {
-    const { indice, destino } = arrastre
-    if (indice == null || destino == null || i === indice) return 0
-    const alto = filas.current[indice]?.getBoundingClientRect().height ?? 0
-    if (destino > indice && i > indice && i <= destino) return -alto
-    if (destino < indice && i >= destino && i < indice) return alto
+    const { indice: d, destino: t, hueco } = vista
+    if (d == null || t == null || i === d || i >= arrastrables) return 0
+    if (t > d && i > d && i <= t) return -hueco
+    if (t < d && i >= t && i < d) return hueco
     return 0
   }
 
-  return {
-    arrastre,
-    registrarFila,
-    refContenedor: contenedor,
-    desplazamientoDe,
-    manejadores: (indice: number) => ({
-      onPointerDown: (e: React.PointerEvent) => alPulsar(e, indice),
+  /** Todo lo que necesita un renglon: medidas, gesto y estilo. */
+  const propsDe = (i: number) => {
+    const alzado = vista.indice === i
+    const dy = alzado ? vista.desplazamiento : desplazamientoDe(i)
+    return {
+      ref: (el: HTMLElement | null) => {
+        filas.current[i] = el
+      },
+      onPointerDown: (e: React.PointerEvent) => alPulsar(e, i),
       onPointerMove: alMover,
-      onPointerUp: alSoltar,
-      onPointerCancel: alSoltar,
-    }),
+      onPointerUp: () => terminar(true),
+      // Si el navegador cancela el gesto no se aplica nada: aplicarlo a medias
+      // dejaba el renglon donde no se queria.
+      onPointerCancel: () => terminar(false),
+      onClickCapture: (e: React.MouseEvent) => {
+        if (suprimirClick.current) {
+          e.preventDefault()
+          e.stopPropagation()
+          suprimirClick.current = false
+        }
+      },
+      onContextMenu: (e: React.MouseEvent) => {
+        if (gesto.current.indice >= 0) e.preventDefault()
+      },
+      'data-fila': i,
+      style: {
+        transform: alzado ? `translateY(${dy}px) scale(1.02)` : dy ? `translateY(${dy}px)` : undefined,
+        transition: alzado || soltando ? 'none' : 'transform 160ms ease',
+        touchAction: 'manipulation',
+        WebkitTouchCallout: 'none',
+        position: alzado ? ('relative' as const) : undefined,
+        zIndex: alzado ? 10 : undefined,
+      } as React.CSSProperties,
+    }
+  }
+
+  return {
+    /** Indice del renglon alzado, o null. */
+    alzado: vista.indice,
+    refContenedor,
+    propsDe,
   }
 }

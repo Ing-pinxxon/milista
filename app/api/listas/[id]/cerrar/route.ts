@@ -46,15 +46,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       data: { textoOriginal, cantidadCambios: cambios.length },
     })
 
-    // El orden en que se fue comprando queda guardado para que la lista siguiente
-    // salga ya en el recorrido de la plaza y no en el de la hoja de calculo.
-    const comprados = lista.items.filter((it) => it.comprado && it.productoId)
-    for (const [puesto, it] of comprados.entries()) {
-      await tx.producto.update({
-        where: { id: it.productoId as string },
-        data: { ordenCompra: puesto },
-      })
-    }
+    // Cerrar una lista NO toca el recorrido. Antes le ponia a lo comprado los
+    // puestos 0, 1, 2... encima del orden que el usuario habia acomodado, y cada
+    // lista cerrada lo desordenaba. El recorrido solo cambia cuando se arrastra.
 
     for (const c of cambios) {
       await tx.precio.create({

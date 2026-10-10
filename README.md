@@ -49,11 +49,10 @@ siguiente lista respete tu decisión en vez de volver a subir el precio.
 **Armar la lista de compras.** El otro lado del ciclo: en vez de recibir la lista, la
 app ayuda a hacerla. Propone lo que está marcado sin existencia y lo que lleva días sin
 actualizarse, se le añade lo que falte y cualquier recordatorio suelto («bolsas negras»).
-La lista va en el orden del recorrido por la plaza. Ese orden se fija una vez desde
-«Editar orden», y desde ahí toda lista nueva sale así y **cada producto que se añade cae
-en su puesto** en vez de irse al final. También se puede reacomodar una lista concreta
-manteniendo pulsado un renglón y arrastrándolo, y al cerrar una lista la app se queda
-con el orden en que se fue comprando. En la plaza se va
+La lista va en el orden del recorrido por la plaza, que es **un solo orden** para todo:
+la lista sale en ese orden, lo que se añade cae directamente en su puesto, y arrastrar
+un renglón (en la lista o en «Editar orden») mueve ese producto en el recorrido y a
+ningún otro. Se guarda solo al soltar. Cerrar una lista no lo toca. En la plaza se va
 chuleando cada cosa y anotando a cómo salió y en qué unidad; lo que ya quedó con precio
 se baja al final para dejar arriba lo que falta. Al terminar, esos precios pasan por la
 misma pantalla de revisión antes de aplicarse. La
