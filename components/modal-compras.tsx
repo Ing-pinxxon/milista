@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { Modal } from './modal'
+import { ModalResumenes } from './modal-resumenes'
+import { ResumenCompra } from './resumen-compra'
+import { armarResumen, cambioDePrecio } from '@/lib/resumen'
 import { normalizar } from '@/lib/normalizar'
 import { calcularVenta, cop } from '@/lib/precios'
 import { sugerirCompras } from '@/lib/compras'
@@ -18,7 +21,7 @@ import {
 } from '@/lib/tipos-compras'
 import type { ProductoConPrecio } from '@/lib/tipos'
 
-type Paso = 'cargando' | 'armar' | 'comprar' | 'revisar'
+type Paso = 'cargando' | 'armar' | 'comprar' | 'revisar' | 'listo'
 
 interface Props {
   productos: ProductoConPrecio[]
@@ -49,6 +52,14 @@ export function ModalCompras({
   const [libre, setLibre] = useState('')
   const [ocupado, setOcupado] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // El resumen se congela al aplicar: despues el catalogo trae los precios nuevos
+  // y, recalculado, todo saldria "igual".
+  const [resumenFinal, setResumenFinal] = useState<{
+    texto: string
+    cantidad: number
+    cambiaron: number
+  } | null>(null)
+  const [verAnteriores, setVerAnteriores] = useState(false)
 
   /**
    * Rellena la unidad que falte con la del producto, para que en la plaza ya
@@ -241,7 +252,23 @@ export function ModalCompras({
         }
       })
       .filter((x): x is NonNullable<typeof x> => x !== null)
-  }, [items, productos])
+      // En el orden del recorrido, igual que la lista y el resumen.
+      .sort((a, b) => (rangos.get(a.producto.id) ?? 0) - (rangos.get(b.producto.id) ?? 0))
+  }, [items, productos, rangos])
+
+  /** El texto para mandar: compra y venta, antes y despues, solo lo que cambio. */
+  const datosResumen = useMemo(
+    () =>
+      cambios.map((c) => ({
+        nombre: c.producto.nombre,
+        costoAntes: c.producto.costoActual,
+        costoDespues: c.costo,
+        ventaAntes: c.producto.ventaActual,
+        ventaDespues: c.venta,
+      })),
+    [cambios],
+  )
+  const textoResumen = useMemo(() => armarResumen(new Date(), datosResumen), [datosResumen])
 
   const aplicar = async () => {
     if (!lista) return
@@ -257,7 +284,13 @@ export function ModalCompras({
     if (r.status === 401) return onPedirClave()
     if (!r.ok) return setError('No se pudieron guardar los precios.')
     navigator.vibrate?.(20)
-    onAplicado(cambios.length)
+    // No se cierra de una vez: queda una pantalla para copiar el resumen.
+    setResumenFinal({
+      texto: textoResumen,
+      cantidad: cambios.length,
+      cambiaron: datosResumen.filter(cambioDePrecio).length,
+    })
+    setPaso('listo')
   }
 
   const comprados = items.filter((i) => i.comprado).length
@@ -293,6 +326,14 @@ export function ModalCompras({
             Empecé por lo que está marcado sin existencia y lo que lleva días sin actualizarse.
             Quita lo que no necesites y añade lo demás.
           </p>
+
+          <button
+            onClick={() => setVerAnteriores(true)}
+            className="min-h-[36px] font-mono text-[11px] uppercase tracking-wider text-amber-500 underline underline-offset-2"
+          >
+            Resumen de compras anteriores
+          </button>
+          {verAnteriores && <ModalResumenes onCerrar={() => setVerAnteriores(false)} />}
 
           <div>
             <input
@@ -510,6 +551,40 @@ export function ModalCompras({
     )
   }
 
+  // ---------------------------------------------------------------- listo
+  if (paso === 'listo' && resumenFinal) {
+    const n = resumenFinal.cantidad
+    return (
+      <Modal
+        titulo="Precios actualizados"
+        onCerrar={() => onAplicado(n)}
+        pie={
+          <button
+            onClick={() => onAplicado(n)}
+            className="min-h-[52px] w-full rounded-xl bg-amber-400 font-bold text-neutral-950"
+          >
+            Listo
+          </button>
+        }
+      >
+        <div className="space-y-4 p-4">
+          <p className="text-sm leading-relaxed text-neutral-400">
+            {n === 0
+              ? 'Se cerró la lista.'
+              : resumenFinal.cambiaron === n
+                ? `Quedaron guardados ${n} precio${n === 1 ? '' : 's'}.`
+                : `Quedaron guardados ${n} precio${n === 1 ? '' : 's'}; ${
+                    resumenFinal.cambiaron === 1 ? '1 cambió' : `${resumenFinal.cambiaron} cambiaron`
+                  } y el resto salió igual.`}{' '}
+            Copia el resumen para mandarlo. Si se te pasa, lo encuentras después en
+            «Lista de compras» → «Resumen de compras anteriores».
+          </p>
+          <ResumenCompra texto={resumenFinal.texto} abierto />
+        </div>
+      </Modal>
+    )
+  }
+
   // -------------------------------------------------------------- revisar
   return (
     <Modal
@@ -538,6 +613,11 @@ export function ModalCompras({
           <p className="py-8 text-center text-neutral-500">
             No anotaste ningún precio. Puedes cerrar la lista igual.
           </p>
+        )}
+        {cambios.length > 0 && (
+          <div className="pb-2">
+            <ResumenCompra texto={textoResumen} />
+          </div>
         )}
         {cambios.map((c) => {
           const sube = (c.costo ?? 0) > (c.producto.costoActual ?? 0)

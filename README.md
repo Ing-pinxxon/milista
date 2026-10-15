@@ -55,7 +55,11 @@ un renglón (en la lista o en «Editar orden») mueve ese producto en el recorri
 ningún otro. Se guarda solo al soltar. Cerrar una lista no lo toca. En la plaza se va
 chuleando cada cosa y anotando a cómo salió y en qué unidad; lo que ya quedó con precio
 se baja al final para dejar arriba lo que falta. Al terminar, esos precios pasan por la
-misma pantalla de revisión antes de aplicarse. La
+misma pantalla de revisión antes de aplicarse. Ahí mismo, y en la pantalla final, está
+el **resumen para mandar** por WhatsApp: compra y venta con el antes → después, solo de
+lo que cambió de precio, con botón de copiar (y de compartir, en Android). Los
+resúmenes de las últimas compras se pueden volver a copiar desde «Resumen de compras
+anteriores». La
 libra se convierte a kilo sola. La lista queda guardada tal como quedó, para poder
 auditar de dónde salió cada precio.
 
@@ -180,7 +184,7 @@ app/
     export/csv/                CSV para la hoja de cálculo
     sesion/                    entrega la cookie a cambio de la clave
     setup/                     carga el catálogo tras el primer despliegue
-    listas/                    la lista de compras: abrir, guardar, cerrar
+    listas/                    la lista de compras: abrir, guardar, cerrar, resúmenes
     productos/orden/           el orden del recorrido por la plaza
 components/                    interfaz
 lib/
@@ -189,6 +193,7 @@ lib/
   precios.ts                   redondeo a 50, margen, formato de pesos
   consultas.ts                 catálogo con el precio vigente
   compras.ts                   qué sugerir llevar a la plaza. Con tests
+  resumen.ts                   el texto del resumen para WhatsApp. Con tests
   conexion.mjs                 encuentra la base sin depender del nombre de la variable
   productos.ts                 los 112 productos con su unidad y su precio
   seed.ts                      carga el catálogo. La usan el CLI y /api/setup
