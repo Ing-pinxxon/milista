@@ -33,6 +33,23 @@ async function copiar(texto: string): Promise<boolean> {
   }
 }
 
+/**
+ * El texto como se ve en WhatsApp: lo que va entre asteriscos sale en negrita y
+ * sin los asteriscos. Lo que se copia sigue llevandolos, que es lo que WhatsApp
+ * convierte en negrita.
+ */
+function comoEnWhatsApp(texto: string) {
+  return texto.split(/(\*[^*\n]+\*)/).map((trozo, i) =>
+    /^\*[^*\n]+\*$/.test(trozo) ? (
+      <strong key={i} className="font-semibold text-neutral-100">
+        {trozo.slice(1, -1)}
+      </strong>
+    ) : (
+      trozo
+    ),
+  )
+}
+
 interface Props {
   texto: string
   /** Si arranca mostrando el texto o solo los botones. */
@@ -79,7 +96,7 @@ export function ResumenCompra({ texto, abierto = false }: Props) {
 
       {verTexto && (
         <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-neutral-950 p-3 font-sans text-[13px] leading-relaxed text-neutral-300">
-          {texto}
+          {comoEnWhatsApp(texto)}
         </pre>
       )}
 

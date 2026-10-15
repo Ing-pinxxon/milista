@@ -1,3 +1,4 @@
+import type { Unidad } from '@prisma/client'
 import { puedeEscribir, respuestaSinAcceso } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import type { CambioResumen } from '@/lib/resumen'
@@ -11,10 +12,9 @@ interface Fila {
   listaId: string
   fecha: Date
   nombre: string
+  unidad: Unidad | null
   costo: number | null
-  venta: number | null
   costoAntes: number | null
-  ventaAntes: number | null
 }
 
 export interface ResumenCompra {
@@ -29,7 +29,9 @@ export interface ResumenCompra {
  *
  * El "antes" de cada producto es el precio que tenia justo antes de esa compra,
  * no el de hoy: asi el resumen de hace tres dias sigue diciendo lo mismo que
- * dijo ese dia. Lleva costos, asi que exige la clave.
+ * dijo ese dia. La unidad es la que se marco al comprar (si fue por libra, el
+ * resumen sale en libra), y si no se marco, la del producto: igual que en la
+ * lista. Lleva costos, asi que exige la clave.
  */
 export async function GET() {
   if (!puedeEscribir()) return respuestaSinAcceso()
@@ -43,13 +45,15 @@ export async function GET() {
       LIMIT ${CUANTAS}
     )
     SELECT u.id AS "listaId", a.fecha, prod.nombre,
-           pr.costo, pr.venta, ant.costo AS "costoAntes", ant.venta AS "ventaAntes"
+           COALESCE(it.unidad, prod.unidad)::text AS unidad,
+           pr.costo, ant.costo AS "costoAntes"
     FROM ultimas u
     JOIN "Actualizacion" a ON a.id = u."actualizacionId"
     JOIN "Precio" pr ON pr."actualizacionId" = a.id
     JOIN "Producto" prod ON prod.id = pr."productoId"
+    LEFT JOIN "ItemLista" it ON it."listaId" = u.id AND it."productoId" = pr."productoId"
     LEFT JOIN LATERAL (
-      SELECT x.costo, x.venta
+      SELECT x.costo
       FROM "Precio" x
       WHERE x."productoId" = pr."productoId"
         AND (x.fecha, x."createdAt", x.id) < (pr.fecha, pr."createdAt", pr.id)
@@ -70,10 +74,9 @@ export async function GET() {
     }
     r.cambios.push({
       nombre: f.nombre,
+      unidad: f.unidad,
       costoAntes: f.costoAntes,
       costoDespues: f.costo,
-      ventaAntes: f.ventaAntes,
-      ventaDespues: f.venta,
     })
   }
 

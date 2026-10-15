@@ -1,21 +1,31 @@
 /**
  * El resumen de una compra, en texto listo para pegar en WhatsApp.
  *
- * Es para el socio o para las cuentas, asi que lleva compra y venta con el
- * antes -> despues. Solo entra lo que cambio de precio: si la guayaba salio al
- * mismo precio de siempre no aparece, y el mensaje dice justo lo que se movio.
+ * Lo mas sencillo de leer de un vistazo: lo que subio en rojo, lo que bajo en
+ * verde, cada producto en una linea con su precio de compra antes y ahora. Solo
+ * entra lo que cambio: si la guayaba salio al precio de siempre no aparece.
  */
+import type { Unidad } from '@prisma/client'
 import { cop } from './precios'
 
 export interface CambioResumen {
   nombre: string
+  /** La unidad en que se anoto la compra: el precio sale en esa misma unidad. */
+  unidad: Unidad | null
+  /** Como se guarda: por kilo si es de peso (la libra ya va x2), o por unidad. */
   costoAntes: number | null
   costoDespues: number | null
-  ventaAntes: number | null
-  ventaDespues: number | null
 }
 
 const MESES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
+
+const ETIQUETA: Record<Unidad, string> = {
+  KG: 'kg',
+  LB: 'lb',
+  UNIDAD: 'c/u',
+  PAQUETE: 'paquete',
+  BULTO: 'bulto',
+}
 
 /**
  * "15 oct". Se arma a mano y no con toLocaleDateString: segun el celular sale
@@ -25,47 +35,52 @@ export function fechaCorta(fecha: Date): string {
   return `${fecha.getDate()} ${MESES[fecha.getMonth()]}`
 }
 
-/** Si cambio algo: la compra o la venta. */
+/** Si cambio el precio de compra, que es lo unico que lleva el mensaje. */
 export function cambioDePrecio(c: CambioResumen): boolean {
-  return c.costoAntes !== c.costoDespues || c.ventaAntes !== c.ventaDespues
-}
-
-/** "$3.000 → $4.000", "$4.000 (igual)" o, si antes no tenia precio, "nuevo $4.000". */
-function tramo(antes: number | null, despues: number | null): string {
-  if (antes == null) return `nuevo ${cop(despues)}`
-  if (antes === despues) return `${cop(despues)} (igual)`
-  return `${cop(antes)} → ${cop(despues)}`
-}
-
-function flecha(antes: number | null, despues: number | null): string {
-  if (antes == null || despues == null || antes === despues) return ''
-  return despues > antes ? ' ↑' : ' ↓'
+  return c.costoDespues != null && c.costoAntes !== c.costoDespues
 }
 
 /**
- * El texto completo. La flecha va con la compra, que es lo que cambio en la
- * plaza; la venta es la consecuencia.
+ * El precio en la unidad en que se anoto. Se guarda por kilo, asi que si se
+ * compro por libra se parte en dos: se ve lo mismo que se pago en la plaza.
+ */
+function enSuUnidad(valor: number, unidad: Unidad | null): number {
+  return unidad === 'LB' ? Math.round(valor / 2) : valor
+}
+
+/** "Guayaba (kg): $3.000 → $4.000", o sin flecha si es nuevo. */
+function linea(c: CambioResumen): string {
+  const nombre = c.unidad ? `${c.nombre} (${ETIQUETA[c.unidad]})` : c.nombre
+  const ahora = cop(enSuUnidad(c.costoDespues as number, c.unidad))
+  if (c.costoAntes == null) return `${nombre}: ${ahora}`
+  return `${nombre}: ${cop(enSuUnidad(c.costoAntes, c.unidad))} → ${ahora}`
+}
+
+/**
+ * El texto completo, agrupado. Los grupos vacios no salen.
  *
  *   🛒 *Compras 15 oct*
  *
- *   Guayaba  $3.000 → $4.000 ↑
- *      venta $3.900 → $5.200
+ *   🔴 *Subieron*
+ *   Guayaba (kg): $3.000 → $4.000
  *
- *   _1 precio cambió_
+ *   🟢 *Bajaron*
+ *   Granadilla (c/u): $1.600 → $1.500
  */
 export function armarResumen(fecha: Date, cambios: CambioResumen[]): string {
-  const cambiados = cambios.filter(cambioDePrecio)
   const titulo = `🛒 *Compras ${fechaCorta(fecha)}*`
-
+  const cambiados = cambios.filter(cambioDePrecio)
   if (cambiados.length === 0) return `${titulo}\n\nNingún precio cambió.`
 
-  const lineas = cambiados.flatMap((c) => {
-    const compra = `${c.nombre}  ${tramo(c.costoAntes, c.costoDespues)}${flecha(c.costoAntes, c.costoDespues)}`
-    if (c.ventaDespues == null) return [compra]
-    return [compra, `   venta ${tramo(c.ventaAntes, c.ventaDespues)}`]
-  })
+  const grupos: [string, CambioResumen[]][] = [
+    ['🔴 *Subieron*', cambiados.filter((c) => c.costoAntes != null && c.costoDespues! > c.costoAntes)],
+    ['🟢 *Bajaron*', cambiados.filter((c) => c.costoAntes != null && c.costoDespues! < c.costoAntes)],
+    ['🆕 *Nuevos*', cambiados.filter((c) => c.costoAntes == null)],
+  ]
 
-  const n = cambiados.length
-  const pie = n === 1 ? '_1 precio cambió_' : `_${n} precios cambiaron_`
-  return [titulo, '', ...lineas, '', pie].join('\n')
+  const bloques = grupos
+    .filter(([, xs]) => xs.length > 0)
+    .map(([encabezado, xs]) => [encabezado, ...xs.map(linea)].join('\n'))
+
+  return [titulo, ...bloques].join('\n\n')
 }

@@ -248,6 +248,7 @@ export function ModalCompras({
           producto: p,
           costo,
           venta: calcularVenta(costo, gananciaDe(p)),
+          unidad: i.unidad,
           convertido: i.unidad === 'LB',
         }
       })
@@ -256,15 +257,14 @@ export function ModalCompras({
       .sort((a, b) => (rangos.get(a.producto.id) ?? 0) - (rangos.get(b.producto.id) ?? 0))
   }, [items, productos, rangos])
 
-  /** El texto para mandar: compra y venta, antes y despues, solo lo que cambio. */
+  /** El texto para mandar: la compra antes y ahora, en la unidad en que se anoto. */
   const datosResumen = useMemo(
     () =>
       cambios.map((c) => ({
         nombre: c.producto.nombre,
+        unidad: c.unidad,
         costoAntes: c.producto.costoActual,
         costoDespues: c.costo,
-        ventaAntes: c.producto.ventaActual,
-        ventaDespues: c.venta,
       })),
     [cambios],
   )

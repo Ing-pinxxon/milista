@@ -56,8 +56,10 @@ ningún otro. Se guarda solo al soltar. Cerrar una lista no lo toca. En la plaza
 chuleando cada cosa y anotando a cómo salió y en qué unidad; lo que ya quedó con precio
 se baja al final para dejar arriba lo que falta. Al terminar, esos precios pasan por la
 misma pantalla de revisión antes de aplicarse. Ahí mismo, y en la pantalla final, está
-el **resumen para mandar** por WhatsApp: compra y venta con el antes → después, solo de
-lo que cambió de precio, con botón de copiar (y de compartir, en Android). Los
+el **resumen para mandar** por WhatsApp: lo que subió (🔴) y lo que bajó (🟢), cada
+producto con su precio de compra antes → después en la unidad en que se anotó (si se
+compró por libra sale por libra), solo de lo que cambió de precio, con botón de copiar
+(y de compartir, en Android). Los
 resúmenes de las últimas compras se pueden volver a copiar desde «Resumen de compras
 anteriores». La
 libra se convierte a kilo sola. La lista queda guardada tal como quedó, para poder
